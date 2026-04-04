@@ -1,0 +1,44 @@
+:root {
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  color: #101828;
+  background-color: #f4f7fb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.card {
+  width: min(100%, 560px);
+  background: white;
+  border: 1px solid #d0d5dd;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 10px 40px rgba(16, 24, 40, 0.08);
+}
+
+.card h1 {
+  margin-top: 0;
+}
+
+.card p {
+  margin-bottom: 16px;
+}
+
+.card ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
