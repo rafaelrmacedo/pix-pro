@@ -59,6 +59,14 @@ pixpro/
 docker compose up --build
 ```
 
+### Deploy with Docker Swarm (Local)
+
+For local testing with Swarm:
+
+```bash
+docker stack deploy -c docker-stack.yml pixpro
+```
+
 ### Main Endpoints
 
 - Frontend: `http://localhost:5173`
@@ -68,33 +76,6 @@ docker compose up --build
 - Project Service: `http://localhost:4003/health`
 - Notification Service: `http://localhost:4004/health`
 - RabbitMQ Management: `http://localhost:15672` (`guest` / `guest`)
-
-## Branch Strategy
-
-1. Keep `main` as stable baseline.
-2. Create `dev` right after first push:
-
-```bash
-git checkout main
-git pull origin main
-git checkout -b dev
-git push -u origin dev
-```
-
-## Commit Convention
-
-Use a simple and consistent prefix strategy:
-
-- `feat:` new feature
-- `fix:` bug fix
-- `chore:` maintenance or infra updates
-- `docs:` documentation updates
-
-Examples:
-
-- `feat: add auth service login mock endpoint`
-- `fix: correct gateway health proxy for project service`
-- `chore: adjust docker compose service dependencies`
 
 ## Roadmap
 
