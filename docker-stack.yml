@@ -1,8 +1,6 @@
 services:
+    image: pixpro-front:latest
   front:
-    build:
-      context: ./front
-      dockerfile: Dockerfile
     ports:
       - "5173:5173"
     environment:
@@ -20,17 +18,19 @@ services:
         delay: 5s
 
   api-gateway:
-    build:
-      context: ./back/api-gateway
-      dockerfile: Dockerfile
+    image: pixpro-api-gateway:latest
     ports:
       - "4000:4000"
     environment:
       - PORT=4000
       - AUTH_SERVICE_URL=http://auth-service:4001
+    image: pixpro-auth-service:latest
       - IMAGE_SERVICE_URL=http://image-processing-service:4002
+    image: pixpro-image-processing-service:latest
       - PROJECT_SERVICE_URL=http://project-service:4003
+    image: pixpro-project-service:latest
       - NOTIFICATION_SERVICE_URL=http://notification-service:4004
+    image: pixpro-notification-service:latest
     depends_on:
       - auth-service
       - image-processing-service
@@ -47,9 +47,7 @@ services:
         delay: 5s
 
   auth-service:
-    build:
-      context: ./back/auth-service
-      dockerfile: Dockerfile
+    image: pixpro-auth-service:latest
     ports:
       - "4001:4001"
     environment:
@@ -70,9 +68,7 @@ services:
         delay: 5s
 
   image-processing-service:
-    build:
-      context: ./back/image-processing-service
-      dockerfile: Dockerfile
+    image: pixpro-image-processing-service:latest
     ports:
       - "4002:4002"
     environment:
@@ -93,9 +89,7 @@ services:
         delay: 5s
 
   project-service:
-    build:
-      context: ./back/project-service
-      dockerfile: Dockerfile
+    image: pixpro-project-service:latest
     ports:
       - "4003:4003"
     environment:
@@ -116,9 +110,7 @@ services:
         delay: 5s
 
   notification-service:
-    build:
-      context: ./back/notification-service
-      dockerfile: Dockerfile
+    image: pixpro-notification-service:latest
     ports:
       - "4004:4004"
     environment:

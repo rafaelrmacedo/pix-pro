@@ -1,0 +1,42 @@
+stages:
+  - build
+  - deploy
+
+services:
+  - docker:24.0.5-dind
+
+build:
+  stage: build
+  image: docker:24.0.5
+  script:
+    - echo "Building images..."
+    - docker build -t pixpro-front:latest ./front
+    - docker build -t pixpro-api-gateway:latest ./back/api-gateway
+    - docker build -t pixpro-auth-service:latest ./back/auth-service
+    - docker build -t pixpro-image-processing-service:latest ./back/image-processing-service
+    - docker build -t pixpro-project-service:latest ./back/project-service
+    - docker build -t pixpro-notification-service:latest ./back/notification-service
+  only:
+    - main
+    - dev
+
+test:
+  stage: test
+  image: alpine:latest
+  script:
+    - echo "Running tests..."
+    # não colocamos nada no momento, mas depois colocaremos
+  only:
+    - main
+    - dev
+
+deploy:
+  stage: deploy
+  image: docker:24.0.5
+  script:
+    - echo "Deploying to Docker Swarm..."
+    # modificar aqui depois para utilizar a VM da Jala
+    - docker stack deploy -c docker-stack.yml pixpro
+  only:
+    - main
+  when: manual
