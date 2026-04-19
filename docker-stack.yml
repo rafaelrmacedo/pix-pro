@@ -1,8 +1,10 @@
 services:
-    image: pixpro-front:latest
   front:
+    image: pixpro-front:latest
     ports:
-      - "5173:5173"
+      - target: 5173
+        published: 5173
+        mode: host
     environment:
       - VITE_API_GATEWAY_URL=http://localhost:4000
     depends_on:
@@ -10,7 +12,7 @@ services:
     networks:
       - pixpro-net
     deploy:
-      replicas: 2
+      replicas: 1
       restart_policy:
         condition: on-failure
       update_config:
@@ -20,17 +22,15 @@ services:
   api-gateway:
     image: pixpro-api-gateway:latest
     ports:
-      - "4000:4000"
+      - target: 4000
+        published: 4000
+        mode: host
     environment:
       - PORT=4000
       - AUTH_SERVICE_URL=http://auth-service:4001
-    image: pixpro-auth-service:latest
       - IMAGE_SERVICE_URL=http://image-processing-service:4002
-    image: pixpro-image-processing-service:latest
       - PROJECT_SERVICE_URL=http://project-service:4003
-    image: pixpro-project-service:latest
       - NOTIFICATION_SERVICE_URL=http://notification-service:4004
-    image: pixpro-notification-service:latest
     depends_on:
       - auth-service
       - image-processing-service
@@ -39,7 +39,7 @@ services:
     networks:
       - pixpro-net
     deploy:
-      replicas: 2
+      replicas: 1
       restart_policy:
         condition: on-failure
       update_config:
@@ -49,7 +49,9 @@ services:
   auth-service:
     image: pixpro-auth-service:latest
     ports:
-      - "4001:4001"
+      - target: 4001
+        published: 4001
+        mode: host
     environment:
       - PORT=4001
       - DATABASE_URL=postgresql://pixpro:pixpro@postgres:5432/pixpro
@@ -60,7 +62,7 @@ services:
     networks:
       - pixpro-net
     deploy:
-      replicas: 2
+      replicas: 1
       restart_policy:
         condition: on-failure
       update_config:
@@ -81,7 +83,7 @@ services:
     networks:
       - pixpro-net
     deploy:
-      replicas: 2
+      replicas: 1
       restart_policy:
         condition: on-failure
       update_config:
@@ -102,7 +104,7 @@ services:
     networks:
       - pixpro-net
     deploy:
-      replicas: 2
+      replicas: 1
       restart_policy:
         condition: on-failure
       update_config:
@@ -123,7 +125,7 @@ services:
     networks:
       - pixpro-net
     deploy:
-      replicas: 2
+      replicas: 1
       restart_policy:
         condition: on-failure
       update_config:
@@ -163,4 +165,7 @@ volumes:
 
 networks:
   pixpro-net:
-    driver: bridge
+    driver: overlay
+    attachable: true
+    driver_opts:
+      com.docker.network.driver.mtu: 1400
