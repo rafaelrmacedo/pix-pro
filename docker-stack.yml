@@ -1,10 +1,10 @@
 services:
   front:
-    build:
-      context: ./front
-      dockerfile: Dockerfile
+    image: pixpro-front:latest
     ports:
-      - "5173:5173"
+      - target: 5173
+        published: 5173
+        mode: host
     environment:
       - VITE_API_GATEWAY_URL=http://localhost:4000
     depends_on:
@@ -12,7 +12,7 @@ services:
     networks:
       - pixpro-net
     deploy:
-      replicas: 2
+      replicas: 1
       restart_policy:
         condition: on-failure
       update_config:
@@ -20,11 +20,11 @@ services:
         delay: 5s
 
   api-gateway:
-    build:
-      context: ./back/api-gateway
-      dockerfile: Dockerfile
+    image: pixpro-api-gateway:latest
     ports:
-      - "4000:4000"
+      - target: 4000
+        published: 4000
+        mode: host
     environment:
       - PORT=4000
       - AUTH_SERVICE_URL=http://auth-service:4001
@@ -39,7 +39,7 @@ services:
     networks:
       - pixpro-net
     deploy:
-      replicas: 2
+      replicas: 1
       restart_policy:
         condition: on-failure
       update_config:
@@ -47,11 +47,11 @@ services:
         delay: 5s
 
   auth-service:
-    build:
-      context: ./back/auth-service
-      dockerfile: Dockerfile
+    image: pixpro-auth-service:latest
     ports:
-      - "4001:4001"
+      - target: 4001
+        published: 4001
+        mode: host
     environment:
       - PORT=4001
       - DATABASE_URL=postgresql://pixpro:pixpro@postgres:5432/pixpro
@@ -62,7 +62,7 @@ services:
     networks:
       - pixpro-net
     deploy:
-      replicas: 2
+      replicas: 1
       restart_policy:
         condition: on-failure
       update_config:
@@ -70,9 +70,7 @@ services:
         delay: 5s
 
   image-processing-service:
-    build:
-      context: ./back/image-processing-service
-      dockerfile: Dockerfile
+    image: pixpro-image-processing-service:latest
     ports:
       - "4002:4002"
     environment:
@@ -85,7 +83,7 @@ services:
     networks:
       - pixpro-net
     deploy:
-      replicas: 2
+      replicas: 1
       restart_policy:
         condition: on-failure
       update_config:
@@ -93,9 +91,7 @@ services:
         delay: 5s
 
   project-service:
-    build:
-      context: ./back/project-service
-      dockerfile: Dockerfile
+    image: pixpro-project-service:latest
     ports:
       - "4003:4003"
     environment:
@@ -108,7 +104,7 @@ services:
     networks:
       - pixpro-net
     deploy:
-      replicas: 2
+      replicas: 1
       restart_policy:
         condition: on-failure
       update_config:
@@ -116,9 +112,7 @@ services:
         delay: 5s
 
   notification-service:
-    build:
-      context: ./back/notification-service
-      dockerfile: Dockerfile
+    image: pixpro-notification-service:latest
     ports:
       - "4004:4004"
     environment:
@@ -131,7 +125,7 @@ services:
     networks:
       - pixpro-net
     deploy:
-      replicas: 2
+      replicas: 1
       restart_policy:
         condition: on-failure
       update_config:
@@ -171,4 +165,7 @@ volumes:
 
 networks:
   pixpro-net:
-    driver: bridge
+    driver: overlay
+    attachable: true
+    driver_opts:
+      com.docker.network.driver.mtu: 1400
