@@ -54,15 +54,21 @@ services:
       - "4001:4001"
     environment:
       - PORT=4001
-      - DATABASE_URL=postgresql://pixpro:pixpro@postgres:5432/pixpro
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=pixpro
+      - DB_PASSWORD=pixpro
+      - DB_NAME=pixpro
       - REDIS_URL=redis://redis:6379
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - pixpro-net
     deploy:
-      replicas: 2
+      replicas: 1
       restart_policy:
         condition: on-failure
       update_config:
@@ -85,7 +91,7 @@ services:
     networks:
       - pixpro-net
     deploy:
-      replicas: 2
+      replicas: 1
       restart_policy:
         condition: on-failure
       update_config:
@@ -108,7 +114,7 @@ services:
     networks:
       - pixpro-net
     deploy:
-      replicas: 2
+      replicas: 1
       restart_policy:
         condition: on-failure
       update_config:
@@ -131,7 +137,7 @@ services:
     networks:
       - pixpro-net
     deploy:
-      replicas: 2
+      replicas: 1
       restart_policy:
         condition: on-failure
       update_config:
@@ -150,6 +156,11 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - pixpro-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pixpro -d pixpro"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine

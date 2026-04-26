@@ -13,4 +13,3 @@ Authentication microservice base for PixPro.
 - `GET /health`
 - `POST /auth/register`
 - `POST /auth/login`
-
