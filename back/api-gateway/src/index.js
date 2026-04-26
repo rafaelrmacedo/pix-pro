@@ -46,6 +46,20 @@ app.get("/api/image/health", async (_req, res) => proxyHealthCheck("image", res)
 app.get("/api/project/health", async (_req, res) => proxyHealthCheck("project", res));
 app.get("/api/notification/health", async (_req, res) => proxyHealthCheck("notification", res));
 
+app.post("/images/jobs", async (req, res) => {
+  try {
+    const response = await fetch(`${services.image}/images/jobs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req.body)
+    });
+    const payload = await response.json();
+    res.status(response.status).json(payload);
+  } catch (error) {
+    res.status(502).json({ error: "Failed to reach image-service", details: error.message });
+  }
+});
+
 app.listen(port, () => {
   console.log(`api-gateway listening on ${port}`);
 });

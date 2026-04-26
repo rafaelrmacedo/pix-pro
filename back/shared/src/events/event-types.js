@@ -1,9 +1,8 @@
 const EVENT_TYPES = {
-  IMAGE_PROCESSING_REQUESTED: "image.processing.requested",
-  IMAGE_PROCESSING_COMPLETED: "image.processing.completed",
-  IMAGE_PROCESSING_FAILED: "image.processing.failed",
+  IMAGE_UPLOADED: "image.uploaded",
+  IMAGE_PROCESSED: "image.processed",
+  PROCESSING_ERROR: "image.error",
   NOTIFICATION_STATUS_UPDATED: "notification.status.updated"
 };
 
 module.exports = { EVENT_TYPES };
-
