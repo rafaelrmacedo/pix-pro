@@ -12,7 +12,7 @@ services:
     networks:
       - pixpro-net
     deploy:
-      replicas: 2
+      replicas: 1
       restart_policy:
         condition: on-failure
       update_config:
@@ -39,7 +39,7 @@ services:
     networks:
       - pixpro-net
     deploy:
-      replicas: 2
+      replicas: 1
       restart_policy:
         condition: on-failure
       update_config:
@@ -64,7 +64,7 @@ services:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
     networks:
       - pixpro-net
     deploy:
@@ -77,8 +77,8 @@ services:
 
   image-processing-service:
     build:
-      context: ./back/image-processing-service
-      dockerfile: Dockerfile
+      context: ./back
+      dockerfile: image-processing-service/Dockerfile
     ports:
       - "4002:4002"
     environment:
@@ -86,8 +86,10 @@ services:
       - RABBITMQ_URL=amqp://rabbitmq:5672
       - REDIS_URL=redis://redis:6379
     depends_on:
-      - rabbitmq
-      - redis
+      rabbitmq:
+        condition: service_started
+      redis:
+        condition: service_healthy
     networks:
       - pixpro-net
     deploy:
@@ -109,8 +111,10 @@ services:
       - DATABASE_URL=postgresql://pixpro:pixpro@postgres:5432/pixpro
       - REDIS_URL=redis://redis:6379
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - pixpro-net
     deploy:
@@ -123,8 +127,8 @@ services:
 
   notification-service:
     build:
-      context: ./back/notification-service
-      dockerfile: Dockerfile
+      context: ./back
+      dockerfile: notification-service/Dockerfile
     ports:
       - "4004:4004"
     environment:
@@ -132,8 +136,10 @@ services:
       - RABBITMQ_URL=amqp://rabbitmq:5672
       - REDIS_URL=redis://redis:6379
     depends_on:
-      - rabbitmq
-      - redis
+      rabbitmq:
+        condition: service_started
+      redis:
+        condition: service_healthy
     networks:
       - pixpro-net
     deploy:
@@ -168,6 +174,11 @@ services:
       - "6379:6379"
     networks:
       - pixpro-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   rabbitmq:
     image: rabbitmq:3.13-management
@@ -176,6 +187,11 @@ services:
       - "15672:15672"
     networks:
       - pixpro-net
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q check_running"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
 
 volumes:
   postgres_data:

@@ -8,4 +8,3 @@ function createEventEnvelope(type, payload, metadata = {}) {
 }
 
 module.exports = { createEventEnvelope };
-
