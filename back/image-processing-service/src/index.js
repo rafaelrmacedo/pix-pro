@@ -1,31 +1,51 @@
-const express = require("express");
-const cors = require("cors");
-const { connectMQ, publishEvent } = require("../../shared/src/mq-utils");
-const { EVENT_TYPES } = require("../../shared/src/events/event-types");
+import express from "express";
+import cors from "cors";
+import { createClient } from "redis";
+import mqUtils from "../../shared/src/mq-utils.js";
+import loggerShared from "../../shared/src/logger.js";
+import { EVENT_TYPES } from "../../shared/src/events/event-types.js";
+
+const { connectMQ, publishEvent, assertQueueWithDLQ } = mqUtils;
+const logger = loggerShared.createLogger("image-processing-service");
 
 const app = express();
 const port = Number(process.env.PORT || 4002);
 const rabbitUrl = process.env.RABBITMQ_URL || "amqp://localhost:5672";
+const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
 
 let mq = null;
+let redis = null;
 
 app.use(cors());
 app.use(express.json());
+
+// idempotency check helper
+async function isAlreadyProcessed(imageId) {
+  if (!redis) return false;
+  const key = `processed_image:${imageId}`;
+  const result = await redis.set(key, "true", {
+    NX: true,
+    EX: 86400 // 24h
+  });
+  return result === null;
+}
 
 app.get("/health", (_req, res) => {
   res.json({
     service: "image-processing-service",
     status: "ok",
     rabbitmq: mq ? "connected" : "disconnected",
-    redis: process.env.REDIS_URL ? "configured" : "missing"
+    redis: redis?.isOpen ? "connected" : "disconnected"
   });
 });
 
 app.post("/images/jobs", async (req, res) => {
   const { projectId = "project-001", imageUrl = "mock://image.png" } = req.body || {};
   const imageId = `img-${Date.now()}`;
+  const cid = req.headers["x-correlation-id"];
 
   if (!mq) {
+    logger.error("Cannot create job: MQ not connected", null, { correlationId: cid });
     return res.status(503).json({ error: "MQ not connected" });
   }
 
@@ -36,7 +56,9 @@ app.post("/images/jobs", async (req, res) => {
     uploadedAt: new Date().toISOString()
   };
 
-  await publishEvent(mq.channel, mq.exchange, EVENT_TYPES.IMAGE_UPLOADED, eventData);
+  await publishEvent(mq.channel, EVENT_TYPES.IMAGE_UPLOADED, eventData, cid);
+
+  logger.info(`Job created: ${imageId}`, { correlationId: cid, projectId });
 
   res.status(202).json({
     message: "Image upload simulated and event emitted",
@@ -45,51 +67,79 @@ app.post("/images/jobs", async (req, res) => {
   });
 });
 
-app.get("/images/jobs/:jobId", (req, res) => {
-  const { jobId } = req.params;
-  res.json({
-    jobId,
-    status: "processing",
-    outputUrl: null
-  });
-});
-
 async function startConsumer() {
-  const queue = "image_processing_queue";
-  await mq.channel.assertQueue(queue, { durable: true });
-  await mq.channel.bindQueue(queue, mq.exchange, EVENT_TYPES.IMAGE_UPLOADED);
+  const queueName = "image_processing_queue";
+  await assertQueueWithDLQ(mq.channel, queueName, EVENT_TYPES.IMAGE_UPLOADED);
 
-  mq.channel.consume(queue, async (msg) => {
-    if (msg !== null) {
-      const content = JSON.parse(msg.content.toString());
-      console.log(`[AI Consumer] Received: ${content.imageId}`);
+  logger.info(`Consumer started for queue: ${queueName}`);
 
+  mq.channel.consume(queueName, async (msg) => {
+    if (!msg) return;
+
+    let content;
+    try {
+      content = JSON.parse(msg.content.toString());
+    } catch (err) {
+      logger.error("Failed to parse message content", err);
+      return mq.channel.nack(msg, false, false);
+    }
+
+    const { imageId, correlationId } = content;
+
+    try {
+      // idempotency check
+      const processed = await isAlreadyProcessed(imageId);
+      if (processed) {
+        logger.warn(`Image ${imageId} already processed. Skipping.`, { correlationId });
+        return mq.channel.ack(msg);
+      }
+
+      logger.info(`Processing image: ${imageId}`, { correlationId });
+
+      // processing (only simulation yet)
       setTimeout(async () => {
-        const processedData = {
-          imageId: content.imageId,
-          projectId: content.projectId,
-          processedUrl: content.originalUrl.replace("mock://", "processed://"),
-          metadata: { aiResult: "Person detected", confidence: 0.98 },
-          processedAt: new Date().toISOString()
-        };
+        try {
+          const processedData = {
+            imageId,
+            projectId: content.projectId,
+            processedUrl: content.originalUrl.replace("mock://", "processed://"),
+            metadata: { aiResult: "Person detected", confidence: 0.98 },
+            processedAt: new Date().toISOString()
+          };
 
-        await publishEvent(mq.channel, mq.exchange, EVENT_TYPES.IMAGE_PROCESSED, processedData);
-        mq.channel.ack(msg);
+          await publishEvent(mq.channel, EVENT_TYPES.IMAGE_PROCESSED, processedData, correlationId);
+          mq.channel.ack(msg);
+          logger.info(`Image processed and event emitted: ${imageId}`, { correlationId });
+        } catch (err) {
+          logger.error(`Error finishing processing for ${imageId}`, err, { correlationId });
+          mq.channel.nack(msg, false, true);
+        }
       }, 2000);
+
+    } catch (err) {
+      logger.error(`Error processing message for ${imageId}`, err, { correlationId });
+      mq.channel.nack(msg, false, true);
     }
   });
 }
 
 async function bootstrap() {
   try {
-    mq = await connectMQ(rabbitUrl);
+    // connect Redis
+    redis = createClient({ url: redisUrl });
+    redis.on("error", (err) => logger.error("Redis Client Error", err));
+    await redis.connect();
+    logger.info("Connected to Redis");
+
+    // connect RabbitMQ
+    mq = await connectMQ(rabbitUrl, "image-processing-service");
     await startConsumer();
 
     app.listen(port, () => {
-      console.log(`image-processing-service listening on ${port}`);
+      logger.info(`image-processing-service listening on ${port}`);
     });
   } catch (err) {
-    console.error("Failed to bootstrap service:", err);
+    logger.error("Failed to bootstrap service", err);
     process.exit(1);
   }
 }
