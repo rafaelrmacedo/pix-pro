@@ -1,8 +1,8 @@
-const express = require("express");
-const cors = require("cors");
-const CircuitBreaker = require("opossum");
-const { createLogger } = require("../../shared/src/logger");
-const { correlationIdMiddleware } = require("../../shared/src/middleware");
+import express, { json } from "express";
+import cors from "cors";
+import CircuitBreaker from "opossum";
+import { createLogger } from "../../shared/src/logger.js";
+import { correlationIdMiddleware } from "../../shared/src/middleware.js";
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
@@ -58,7 +58,7 @@ Object.keys(breakers).forEach(key => {
 });
 
 app.use(cors());
-app.use(express.json());
+app.use(json());
 app.use(correlationIdMiddleware);
 
 app.get("/health", (_req, res) => {
