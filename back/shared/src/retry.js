@@ -1,7 +1,7 @@
 /**
  * Exponential backoff utility with jitter.
  */
-async function withRetry(operation, options = {}) {
+export async function withRetry(operation, options = {}) {
   const {
     maxRetries = 4,
     initialDelay = 1000,

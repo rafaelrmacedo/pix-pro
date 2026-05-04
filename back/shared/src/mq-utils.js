@@ -1,10 +1,10 @@
 import { connect } from "amqplib";
-import { withRetry } from "./retry";
+import { withRetry } from "./retry.js";
 
 const EXCHANGE_NAME = "pixpro.events";
 const DLX_NAME = "pixpro.dlx";
 
-async function connectMQ(url, serviceName = "unknown") {
+export async function connectMQ(url, serviceName = "unknown") {
   return withRetry(async () => {
     const connection = await connect(url);
     const channel = await connection.createChannel();
@@ -31,7 +31,7 @@ async function connectMQ(url, serviceName = "unknown") {
   });
 }
 
-async function publishEvent(channel, routingKey, data, correlationId = null) {
+export async function publishEvent(channel, routingKey, data, correlationId = null) {
   if (!channel) {
     console.error(`[MQ] Cannot publish to ${routingKey}: Channel not initialized`);
     return;
@@ -51,7 +51,7 @@ async function publishEvent(channel, routingKey, data, correlationId = null) {
   }
 }
 
-async function assertQueueWithDLQ(channel, queueName, routingKey) {
+export async function assertQueueWithDLQ(channel, queueName, routingKey) {
   const dlqName = `${queueName}.dlq`;
 
   // Assert DLQ

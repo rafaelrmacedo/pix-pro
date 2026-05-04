@@ -1,4 +1,4 @@
-function createLogger(serviceName) {
+export function createLogger(serviceName) {
   return {
     info: (message, context = {}) => {
       log("INFO", message, context, serviceName);
@@ -22,7 +22,7 @@ function createLogger(serviceName) {
   };
 }
 
-function log(level, message, context, serviceName) {
+export function log(level, message, context, serviceName) {
   const logEntry = {
     timestamp: new Date().toISOString(),
     level,
@@ -35,4 +35,4 @@ function log(level, message, context, serviceName) {
   console.log(JSON.stringify(logEntry));
 }
 
-export default { createLogger };
+export default { createLogger, log };
