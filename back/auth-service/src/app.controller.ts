@@ -1,12 +1,22 @@
 import { Controller, Get } from '@nestjs/common';
-import { AppService } from './app.service';
+import { DataSource } from 'typeorm';
 
 @Controller()
 export class AppController {
-  constructor(private readonly appService: AppService) {}
+  constructor(private dataSource: DataSource) {}
+
+  @Get('health')
+  async getHealth() {
+    const isDbConnected = this.dataSource.isInitialized;
+    return {
+      service: 'auth-service',
+      status: isDbConnected ? 'ok' : 'error',
+      database: isDbConnected ? 'connected' : 'disconnected',
+    };
+  }
 
   @Get()
   getHello(): string {
-    return this.appService.getHello();
+    return 'Auth Service is running';
   }
 }
