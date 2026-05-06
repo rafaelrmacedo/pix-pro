@@ -2,13 +2,17 @@ const http = require("http");
 const express = require("express");
 const cors = require("cors");
 const { WebSocketServer } = require("ws");
+const { EVENT_TYPES } = require("../../shared/src/events/event-types");
+const { RabbitMQEventBus } = require("../../shared/src/events/event-bus");
 const { connectMQ } = require("../../shared/src/mq-utils");
+const { MQ_QUEUES } = require("../../shared/src/mq-topology");
 
 const app = express();
 const port = Number(process.env.PORT || 4004);
 const rabbitUrl = process.env.RABBITMQ_URL || "amqp://localhost:5672";
 
 let mq = null;
+let eventBus = null;
 
 app.use(cors());
 app.use(express.json());
@@ -44,39 +48,37 @@ app.get("/health", (_req, res) => {
   });
 });
 
-app.post("/notifications/status", (req, res) => {
-  const event = {
-    type: "notification.status.updated",
-    payload: req.body || { status: "processing", jobId: "job-001" },
-    emittedAt: new Date().toISOString()
-  };
+app.post("/notifications/status", async (req, res) => {
+  try {
+    const event = await eventBus.publish(
+      EVENT_TYPES.NOTIFICATION_STATUS_UPDATED,
+      req.body || { status: "processing", jobId: "job-001" },
+      { source: "notification-service" }
+    );
 
-  broadcast(event);
-  res.status(202).json({
-    message: "Notification broadcasted",
-    event
-  });
+    broadcast(event);
+    res.status(202).json({
+      message: "Notification event published",
+      event
+    });
+  } catch (error) {
+    res.status(503).json({ error: "Failed to publish notification event", details: error.message });
+  }
 });
 
 async function startMQConsumer() {
-  const queue = "notification_queue";
-  await mq.channel.assertQueue(queue, { durable: true });
-
-  await mq.channel.bindQueue(queue, mq.exchange, "image.*");
-
-  mq.channel.consume(queue, (msg) => {
-    if (msg !== null) {
-      const routingKey = msg.fields.routingKey;
-      const content = JSON.parse(msg.content.toString());
-
+  await eventBus.subscribe({
+    queue: MQ_QUEUES.NOTIFICATIONS,
+    routingKeys: ["image.*", "project.*", EVENT_TYPES.NOTIFICATION_STATUS_UPDATED],
+    handler: async (event, routingKey) => {
       console.log(`[Notification Consumer] Received: ${routingKey}`);
 
       broadcast({
-        type: routingKey,
-        payload: content
+        type: event.type || routingKey,
+        payload: event.payload || event,
+        metadata: event.metadata || {},
+        occurredAt: event.occurredAt || new Date().toISOString()
       });
-
-      mq.channel.ack(msg);
     }
   });
 }
@@ -84,6 +86,11 @@ async function startMQConsumer() {
 async function bootstrap() {
   try {
     mq = await connectMQ(rabbitUrl);
+    eventBus = new RabbitMQEventBus({
+      channel: mq.channel,
+      exchange: mq.eventExchange
+    });
+
     await startMQConsumer();
 
     server.listen(port, () => {

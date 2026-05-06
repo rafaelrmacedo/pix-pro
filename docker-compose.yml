@@ -102,19 +102,22 @@ services:
 
   project-service:
     build:
-      context: ./back/project-service
-      dockerfile: Dockerfile
+      context: ./back
+      dockerfile: project-service/Dockerfile
     ports:
       - "4003:4003"
     environment:
       - PORT=4003
       - DATABASE_URL=postgresql://pixpro:pixpro@postgres:5432/pixpro
       - REDIS_URL=redis://redis:6379
+      - RABBITMQ_URL=amqp://rabbitmq:5672
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      rabbitmq:
+        condition: service_started
     networks:
       - pixpro-net
     deploy:

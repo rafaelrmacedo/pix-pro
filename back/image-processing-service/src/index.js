@@ -1,13 +1,18 @@
 const express = require("express");
 const cors = require("cors");
-const { connectMQ, publishEvent } = require("../../shared/src/mq-utils");
+const { BaseCommand } = require("../../shared/src/cqrs/base-command");
+const { COMMAND_TYPES } = require("../../shared/src/cqrs/command-types");
 const { EVENT_TYPES } = require("../../shared/src/events/event-types");
+const { RabbitMQEventBus } = require("../../shared/src/events/event-bus");
+const { connectMQ, publishCommand } = require("../../shared/src/mq-utils");
+const { MQ_QUEUES } = require("../../shared/src/mq-topology");
 
 const app = express();
 const port = Number(process.env.PORT || 4002);
 const rabbitUrl = process.env.RABBITMQ_URL || "amqp://localhost:5672";
 
 let mq = null;
+let eventBus = null;
 
 app.use(cors());
 app.use(express.json());
@@ -29,19 +34,24 @@ app.post("/images/jobs", async (req, res) => {
     return res.status(503).json({ error: "MQ not connected" });
   }
 
-  const eventData = {
+  const command = new BaseCommand(COMMAND_TYPES.REQUEST_IMAGE_PROCESSING, {
     imageId,
     projectId,
     originalUrl: imageUrl,
-    uploadedAt: new Date().toISOString()
-  };
+    requestedAt: new Date().toISOString()
+  });
 
-  await publishEvent(mq.channel, mq.exchange, EVENT_TYPES.IMAGE_UPLOADED, eventData);
+  await publishCommand(
+    mq.channel,
+    mq.commandExchange,
+    COMMAND_TYPES.REQUEST_IMAGE_PROCESSING,
+    command
+  );
 
   res.status(202).json({
-    message: "Image upload simulated and event emitted",
+    message: "Image processing command queued",
     imageId,
-    event: EVENT_TYPES.IMAGE_UPLOADED
+    command: COMMAND_TYPES.REQUEST_IMAGE_PROCESSING
   });
 });
 
@@ -55,27 +65,45 @@ app.get("/images/jobs/:jobId", (req, res) => {
 });
 
 async function startConsumer() {
-  const queue = "image_processing_queue";
-  await mq.channel.assertQueue(queue, { durable: true });
-  await mq.channel.bindQueue(queue, mq.exchange, EVENT_TYPES.IMAGE_UPLOADED);
+  await mq.channel.prefetch(5);
 
-  mq.channel.consume(queue, async (msg) => {
+  mq.channel.consume(MQ_QUEUES.IMAGE_COMMANDS, async (msg) => {
     if (msg !== null) {
-      const content = JSON.parse(msg.content.toString());
-      console.log(`[AI Consumer] Received: ${content.imageId}`);
+      const routingKey = msg.fields.routingKey;
 
-      setTimeout(async () => {
+      try {
+        const command = JSON.parse(msg.content.toString());
+        const content = command.payload || {};
+
+        console.log(`[AI Command Consumer] Received: ${content.imageId}`);
+
+        await eventBus.publish(EVENT_TYPES.IMAGE_UPLOADED, {
+          imageId: content.imageId,
+          projectId: content.projectId,
+          originalUrl: content.originalUrl,
+          uploadedAt: new Date().toISOString()
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
         const processedData = {
           imageId: content.imageId,
           projectId: content.projectId,
-          processedUrl: content.originalUrl.replace("mock://", "processed://"),
+          processedUrl: String(content.originalUrl).replace("mock://", "processed://"),
           metadata: { aiResult: "Person detected", confidence: 0.98 },
           processedAt: new Date().toISOString()
         };
 
-        await publishEvent(mq.channel, mq.exchange, EVENT_TYPES.IMAGE_PROCESSED, processedData);
+        await eventBus.publish(EVENT_TYPES.IMAGE_PROCESSED, processedData);
         mq.channel.ack(msg);
-      }, 2000);
+      } catch (error) {
+        console.error(`[AI Command Consumer] Error handling ${routingKey}:`, error.message);
+        await eventBus.publish(EVENT_TYPES.PROCESSING_ERROR, {
+          error: error.message,
+          failedAt: new Date().toISOString()
+        });
+        mq.channel.ack(msg);
+      }
     }
   });
 }
@@ -83,6 +111,11 @@ async function startConsumer() {
 async function bootstrap() {
   try {
     mq = await connectMQ(rabbitUrl);
+    eventBus = new RabbitMQEventBus({
+      channel: mq.channel,
+      exchange: mq.eventExchange
+    });
+
     await startConsumer();
 
     app.listen(port, () => {

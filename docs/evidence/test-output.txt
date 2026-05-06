@@ -1,0 +1,33 @@
+npm test
+
+> pixpro-back-common@0.1.0 test
+> node tests/run-tests.js
+
+[EventBus] Published project.created
+TAP version 13
+# Subtest: CommandBus dispatches commands to the registered handler
+ok 1 - CommandBus dispatches commands to the registered handler
+# Subtest: CommandBus rejects unknown command types
+ok 2 - CommandBus rejects unknown command types
+# Subtest: QueryBus dispatches queries to the registered handler
+ok 3 - QueryBus dispatches queries to the registered handler
+# Subtest: RabbitMQEventBus publishes durable JSON event envelopes
+ok 4 - RabbitMQEventBus publishes durable JSON event envelopes
+# Subtest: RabbitMQEventBus subscribes, handles messages and acknowledges success
+ok 5 - RabbitMQEventBus subscribes, handles messages and acknowledges success
+# Subtest: create project command writes to the command model and publishes ProjectCreated
+ok 6 - create project command writes to the command model and publishes ProjectCreated
+# Subtest: project queries read from the Redis read model abstraction
+ok 7 - project queries read from the Redis read model abstraction
+# Subtest: ProjectCreated projection updates the read model
+ok 8 - ProjectCreated projection updates the read model
+# Subtest: project name validation rejects empty names
+ok 9 - project name validation rejects empty names
+1..9
+# tests 9
+# suites 0
+# pass 9
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
