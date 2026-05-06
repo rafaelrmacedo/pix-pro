@@ -2,10 +2,15 @@
   "name": "pixpro-back-common",
   "version": "0.1.0",
   "private": true,
+  "scripts": {
+    "test": "node tests/run-tests.js"
+  },
   "dependencies": {
     "amqplib": "^1.0.3",
     "cors": "^2.8.5",
     "express": "^4.21.1",
+    "pg": "^8.13.1",
+    "redis": "^4.7.0",
     "ws": "^8.18.0"
   }
 }
