@@ -4,8 +4,12 @@ import { createClient } from "redis";
 import mqUtils from "../../shared/src/mq-utils.js";
 import loggerShared from "../../shared/src/logger.js";
 import { EVENT_TYPES } from "../../shared/src/events/event-types.js";
+import { BaseCommand } from "../../shared/src/cqrs/base-command.js";
+import { COMMAND_TYPES } from "../../shared/src/cqrs/command-types.js";
+import { RabbitMQEventBus } from "../../shared/src/events/event-bus.js";
+import { MQ_QUEUES } from "../../shared/src/mq-topology.js";
 
-const { connectMQ, publishEvent, assertQueueWithDLQ } = mqUtils;
+const { connectMQ, publishEvent, publishCommand, assertQueueWithDLQ } = mqUtils;
 const logger = loggerShared.createLogger("image-processing-service");
 
 const app = express();
@@ -15,6 +19,7 @@ const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
 
 let mq = null;
 let redis = null;
+let eventBus = null;
 
 app.use(cors());
 app.use(express.json());
@@ -49,6 +54,13 @@ app.post("/images/jobs", async (req, res) => {
     return res.status(503).json({ error: "MQ not connected" });
   }
 
+  const command = new BaseCommand(COMMAND_TYPES.REQUEST_IMAGE_PROCESSING, {
+    imageId,
+    projectId,
+    originalUrl: imageUrl,
+    requestedAt: new Date().toISOString()
+  });
+
   const eventData = {
     imageId,
     projectId,
@@ -59,16 +71,22 @@ app.post("/images/jobs", async (req, res) => {
   await publishEvent(mq.channel, EVENT_TYPES.IMAGE_UPLOADED, eventData, cid);
 
   logger.info(`Job created: ${imageId}`, { correlationId: cid, projectId });
+  await publishCommand(
+    mq.channel,
+    mq.commandExchange,
+    COMMAND_TYPES.REQUEST_IMAGE_PROCESSING,
+    command
+  );
 
   res.status(202).json({
-    message: "Image upload simulated and event emitted",
+    message: "Image processing command queued",
     imageId,
-    event: EVENT_TYPES.IMAGE_UPLOADED
+    command: COMMAND_TYPES.REQUEST_IMAGE_PROCESSING
   });
 });
 
 async function startConsumer() {
-  const queueName = "image_processing_queue";
+  const queueName = MQ_QUEUES.IMAGE_COMMANDS || "image_processing_queue";
   await assertQueueWithDLQ(mq.channel, queueName, EVENT_TYPES.IMAGE_UPLOADED);
 
   logger.info(`Consumer started for queue: ${queueName}`);
@@ -78,7 +96,8 @@ async function startConsumer() {
 
     let content;
     try {
-      content = JSON.parse(msg.content.toString());
+      const body = JSON.parse(msg.content.toString());
+      content = body.payload || body;
     } catch (err) {
       logger.error("Failed to parse message content", err);
       return mq.channel.nack(msg, false, false);
@@ -88,8 +107,8 @@ async function startConsumer() {
 
     try {
       // idempotency check
-      const processed = await isAlreadyProcessed(imageId);
-      if (processed) {
+      const alreadyProcessed = await isAlreadyProcessed(imageId);
+      if (alreadyProcessed) {
         logger.warn(`Image ${imageId} already processed. Skipping.`, { correlationId });
         return mq.channel.ack(msg);
       }
@@ -102,12 +121,12 @@ async function startConsumer() {
           const processedData = {
             imageId,
             projectId: content.projectId,
-            processedUrl: content.originalUrl.replace("mock://", "processed://"),
+            processedUrl: String(content.originalUrl).replace("mock://", "processed://"),
             metadata: { aiResult: "Person detected", confidence: 0.98 },
             processedAt: new Date().toISOString()
           };
 
-          await publishEvent(mq.channel, EVENT_TYPES.IMAGE_PROCESSED, processedData, correlationId);
+          await eventBus.publish(EVENT_TYPES.IMAGE_PROCESSED, processedData, correlationId);
           mq.channel.ack(msg);
           logger.info(`Image processed and event emitted: ${imageId}`, { correlationId });
         } catch (err) {
@@ -133,6 +152,11 @@ async function bootstrap() {
 
     // connect RabbitMQ
     mq = await connectMQ(rabbitUrl, "image-processing-service");
+    eventBus = new RabbitMQEventBus({
+      channel: mq.channel,
+      exchange: mq.eventExchange
+    });
+
     await startConsumer();
 
     app.listen(port, () => {

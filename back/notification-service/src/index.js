@@ -6,6 +6,9 @@ import pg from "pg";
 import mqUtils from "../../shared/src/mq-utils.js";
 import loggerShared from "../../shared/src/logger.js";
 import middlewareShared from "../../shared/src/middleware.js";
+import { EVENT_TYPES } from "../../shared/src/events/event-types.js";
+import { RabbitMQEventBus } from "../../shared/src/events/event-bus.js";
+import { MQ_QUEUES } from "../../shared/src/mq-topology.js";
 
 const { Pool } = pg;
 const { connectMQ, assertQueueWithDLQ } = mqUtils;
@@ -21,6 +24,7 @@ const logger = createLogger("notification-service");
 const pool = new Pool({ connectionString: databaseUrl });
 
 let mq = null;
+let eventBus = null;
 
 app.use(cors());
 app.use(express.json());
@@ -75,6 +79,24 @@ app.get("/notifications", async (req, res) => {
   } catch (err) {
     logger.error("Failed to fetch notifications", err, { correlationId: cid });
     res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+app.post("/notifications/status", async (req, res) => {
+  try {
+    const event = await eventBus.publish(
+      EVENT_TYPES.NOTIFICATION_STATUS_UPDATED,
+      req.body || { status: "processing", jobId: "job-001" },
+      { source: "notification-service" }
+    );
+
+    broadcast(event);
+    res.status(202).json({
+      message: "Notification event published",
+      event
+    });
+  } catch (error) {
+    res.status(503).json({ error: "Failed to publish notification event", details: error.message });
   }
 });
 
@@ -141,6 +163,11 @@ async function bootstrap() {
 
     // connect RabbitMQ
     mq = await connectMQ(rabbitUrl, "notification-service");
+    eventBus = new RabbitMQEventBus({
+      channel: mq.channel,
+      exchange: mq.eventExchange
+    });
+
     await startMQConsumer();
 
     server.listen(port, () => {

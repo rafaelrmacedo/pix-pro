@@ -11,5 +11,6 @@ WORKDIR /app/back/project-service
 COPY project-service/package*.json ./
 COPY project-service/src ./src
 
+ENV NODE_PATH=/app/back/node_modules
 EXPOSE 4003
 CMD ["npm", "start"]

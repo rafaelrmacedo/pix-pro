@@ -3,19 +3,24 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "test": "jest"
+  },
   "dependencies": {
     "amqplib": "^1.0.3",
     "cors": "^2.8.5",
     "express": "^4.21.1",
     "opossum": "^8.4.0",
-    "pg": "^8.13.0",
+    "pg": "^8.13.1",
     "redis": "^4.7.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "jest": "^29.7.0"
-  },
-  "scripts": {
-    "test": "jest"
+    "@babel/core": "^7.29.0",
+    "@babel/preset-env": "^7.29.5",
+    "@types/jest": "^30.0.0",
+    "babel-jest": "^30.4.1",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.4.9"
   }
 }

@@ -99,6 +99,30 @@ async function proxyCall(serviceKey, path, req, res) {
   }
 }
 
+async function proxyJsonRequest(serviceKey, targetPath, req, res) {
+  try {
+    const query = new URLSearchParams(req.query).toString();
+    const targetUrl = `${services[serviceKey]}${targetPath}${query ? `?${query}` : ""}`;
+    const options = {
+      method: req.method,
+      headers: { "Content-Type": "application/json" }
+    };
+
+    if (!["GET", "HEAD"].includes(req.method)) {
+      options.body = JSON.stringify(req.body || {});
+    }
+
+    const response = await fetch(targetUrl, options);
+    const payload = await response.json();
+    res.status(response.status).json(payload);
+  } catch (error) {
+    res.status(502).json({
+      error: `Failed to reach ${serviceKey}-service`,
+      details: error.message
+    });
+  }
+}
+
 app.get("/api/:service/health", async (req, res) => {
   const { service } = req.params;
   if (!services[service]) return res.status(404).json({ error: "Service not found" });
@@ -108,6 +132,16 @@ app.get("/api/:service/health", async (req, res) => {
 app.post("/images/jobs", async (req, res) => proxyCall("image", "/images/jobs", req, res));
 app.get("/projects", async (req, res) => proxyCall("project", "/projects", req, res));
 app.post("/projects", async (req, res) => proxyCall("project", "/projects", req, res));
+
+app.get("/projects", async (req, res) => proxyJsonRequest("project", "/projects", req, res));
+app.get("/projects/:id", async (req, res) => proxyJsonRequest("project", `/projects/${req.params.id}`, req, res));
+app.post("/projects", async (req, res) => proxyJsonRequest("project", "/projects", req, res));
+app.post("/projects/commands", async (req, res) => proxyJsonRequest("project", "/projects/commands", req, res));
+
+app.get("/api/projects", async (req, res) => proxyJsonRequest("project", "/projects", req, res));
+app.get("/api/projects/:id", async (req, res) => proxyJsonRequest("project", `/projects/${req.params.id}`, req, res));
+app.post("/api/projects", async (req, res) => proxyJsonRequest("project", "/projects", req, res));
+app.post("/api/projects/commands", async (req, res) => proxyJsonRequest("project", "/projects/commands", req, res));
 
 app.listen(port, () => {
   logger.info(`api-gateway listening on ${port}`);

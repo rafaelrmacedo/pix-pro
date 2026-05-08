@@ -1,4 +1,4 @@
-function createEventEnvelope(type, payload, metadata = {}) {
+export function createEventEnvelope(type, payload, metadata = {}) {
   return {
     type,
     payload,
@@ -7,4 +7,4 @@ function createEventEnvelope(type, payload, metadata = {}) {
   };
 }
 
-module.exports = { createEventEnvelope };
+export default { createEventEnvelope };

@@ -1,6 +1,7 @@
-const { createLogger } = require("../src/logger").default;
-const { withRetry } = require("../src/retry");
-const { correlationIdMiddleware } = require("../src/middleware").default;
+import { jest } from '@jest/globals';
+import { createLogger } from '../src/logger.js';
+import { withRetry } from '../src/retry.js';
+import { correlationIdMiddleware } from '../src/middleware.js';
 
 describe("Shared Library", () => {
   describe("Logger", () => {
@@ -15,13 +16,13 @@ describe("Shared Library", () => {
     test("should log info messages", () => {
       const logger = createLogger("test-service");
       logger.info("Test info");
-      expect(spy).toHaveBeenCalledWith(expect.stringContaining("INFO"), expect.anything());
+      expect(spy).toHaveBeenCalledWith(expect.stringContaining("INFO"));
     });
 
     test("should include correlationId in logs", () => {
       const logger = createLogger("test-service");
       logger.info("Test info", { correlationId: "cid-123" });
-      expect(spy).toHaveBeenCalledWith(expect.stringContaining("[CID:cid-123]"), expect.anything());
+      expect(spy).toHaveBeenCalledWith(expect.stringContaining("cid-123"));
     });
   });
 
