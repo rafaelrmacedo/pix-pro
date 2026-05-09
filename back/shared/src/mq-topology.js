@@ -42,13 +42,10 @@ export const MQ_BINDINGS = [
 ];
 
 export async function assertPixProTopology(channel) {
+  // We only assert exchanges here. 
+  // Queues are asserted by individual services to allow custom arguments (like DLX).
   await channel.assertExchange(MQ_EXCHANGES.COMMANDS, "topic", { durable: true });
   await channel.assertExchange(MQ_EXCHANGES.EVENTS, "topic", { durable: true });
-
-  for (const binding of MQ_BINDINGS) {
-    await channel.assertQueue(binding.queue, { durable: true });
-    await channel.bindQueue(binding.queue, binding.exchange, binding.routingKey);
-  }
 }
 
 export default {
