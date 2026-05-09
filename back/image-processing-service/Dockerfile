@@ -9,6 +9,7 @@ COPY shared ./shared
 FROM base
 WORKDIR /app/back/image-processing-service
 COPY image-processing-service/package*.json ./
+RUN npm install --omit=dev
 COPY image-processing-service/src ./src
 
 ENV NODE_PATH=/app/back/node_modules

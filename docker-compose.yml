@@ -96,6 +96,11 @@ services:
       - RABBITMQ_URL=amqp://rabbitmq:5672
       - REDIS_URL=redis://redis:6379
       - DATABASE_URL=postgresql://pixpro:pixpro@postgres:5432/pixpro
+      - R2_ENDPOINT=https://287da3a797d1e2be3f93a5db395a27e8.r2.cloudflarestorage.com
+      - R2_ACCESS_KEY_ID=848558423d0fbfcd6df04fe3ce9912c6
+      - R2_SECRET_ACCESS_KEY=a5604683c313bdae3b65a17bcc369bddfa6cfbef8a1c9db52d30087fc0404293
+      - R2_BUCKET_NAME=ds5-capstone
+      - R2_PUBLIC_URL=https://pub-d37d3989495a4503bdae9bfb52e5907d.r2.dev
     depends_on:
       rabbitmq:
         condition: service_started

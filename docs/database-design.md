@@ -1,49 +1,55 @@
-# Relatório de Design e Otimização do Banco de Dados
+# Relatório de Design: Banco de Dados e CDN
 
-Este documento detalha a arquitetura do banco de dados para o projeto final, otimizada para consultas de alta frequência.
+Este documento detalha a arquitetura do banco de dados e a integração com o CDN para o projeto final, otimizados para alta performance e escalabilidade.
 
-## Diagrama do Esquema do Banco de Dados
+## Diagrama de Arquitetura de Dados
 
 ```mermaid
-erDiagram
-    PROJECTS ||--o{ IMAGES : contém
-    PROJECTS {
-        string id PK
-        string name
-        timestamp created_at
-    }
-    IMAGES {
-        string id PK
-        string project_id FK
-        string original_url
-        string cdn_url
-        string status
-        timestamp created_at
-    }
+sequenceDiagram
+    participant User
+    participant ProjectService
+    participant RabbitMQ
+    participant ImageService
+    participant PostgreSQL
+    participant Redis
+    participant CloudflareR2
+
+    User->>ProjectService: Criar Projeto / Upload Imagem
+    ProjectService->>PostgreSQL: Persistir Metadados
+    ProjectService->>Redis: Invalida Cache
+    ProjectService->>RabbitMQ: Publicar Evento "IMAGE_UPLOADED"
+    
+    RabbitMQ->>ImageService: Consumir Evento
+    ImageService->>PostgreSQL: Criar registro de imagem (status: processing)
+    ImageService->>ImageService: Processar Imagem (AI)
+    ImageService->>CloudflareR2: Upload Imagem Processada
+    CloudflareR2-->>ImageService: Retorna URL Pública (CDN)
+    
+    ImageService->>PostgreSQL: Atualiza registro (status: completed, cdn_url: URL)
+    ImageService->>Redis: Invalida Cache de Imagens do Projeto
+    ImageService->>RabbitMQ: Publicar Evento "IMAGE_PROCESSED"
 ```
 
-## Escolha do Banco de Dados e Justificativa
+## Otimização do Banco de Dados (Alta Frequência)
 
-### Banco de Dados Primário: PostgreSQL
-- **Justificativa:** Para este sistema, a consistência e a integridade dos dados são críticas. O PostgreSQL oferece conformidade ACID robusta, garantindo que os relacionamentos entre projetos e suas imagens processadas nunca sejam corrompidos.
+### PostgreSQL (Persistência)
+- **Justificativa:** Garantia de integridade referencial entre Projetos e Imagens através de chaves estrangeiras e conformidade ACID.
+- **Otimizações:** Implementação de índices B-Tree nas colunas `project_id` (tabela `images`) e `created_at` (tabela `projects`) para acelerar consultas de leitura frequentes.
 
-### Camada de Cache: Redis
-- **Justificativa:** Para lidar com consultas de alta frequência, acessar o PostgreSQL para cada requisição é ineficiente. O Redis armazena dados acessados com frequência (como listas de projetos e metadados de imagens) na memória RAM, proporcionando tempos de resposta por volta de microssegundos.
+### Redis (Cache-Aside)
+- **Justificativa:** Redução da carga no PostgreSQL e latência de resposta em microsegundos para dados acessados repetidamente.
+- **Fluxo:** O `project-service` consulta o Redis antes do banco. O cache é invalidado em todas as operações de escrita para garantir consistência.
 
-## Otimizações para Alta Frequência
+## CDN para Armazenamento de Imagens (Cloudflare R2)
 
-### Indexação do Banco de Dados
-Implementamos índices B-Tree em colunas usadas em cláusulas `WHERE` e `ORDER BY` frequentes:
-- `idx_images_project_id`: Acelera a recuperação de imagens para projetos específicos.
-- `idx_projects_created_at`: Otimiza a recuperação dos projetos mais recentes.
+### Escolha da Tecnologia: Cloudflare R2
+- **Compatibilidade S3:** Permite o uso de bibliotecas padrão da indústria, facilitando a portabilidade.
+- **Egress Fees Zero:** Diferente do AWS S3, o R2 não cobra por transferência de dados de saída, tornando-o ideal para um projeto com muitas visualizações de imagens.
+- **Integração Nativa:** Distribuição automática através da rede global da Cloudflare.
 
-### Estratégia de Caching: Cache-Aside
-O sistema utiliza o padrão *Cache-Aside*:
-1. A aplicação verifica o *Redis* em busca dos dados solicitados.
-2. Se encontrado (*Cache Hit*), retorna imediatamente.
-3. Se não encontrado (*Cache Miss*), consulta o *PostgreSQL*, popula o *Redis* e retorna.
-4. Em operações de escrita (ex: criação de um projeto), o cache é invalidado para garantir a atualização dos dados.
+### Estratégia de Integração
+- **Armazenamento Desacoplado:** O banco de dados PostgreSQL armazena apenas os metadados e a URL final da imagem. O arquivo binário reside exclusivamente no R2.
+- **Workflow:** O `image-processing-service` é o único responsável pelo upload para o CDN, garantindo que apenas imagens processadas e validadas ocupem espaço de armazenamento.
 
-## Considerações de Escalabilidade
-- **Read Replicas:** Se o tráfego de leitura exceder a capacidade de uma única instância do PostgreSQL, réplicas de leitura podem ser adicionadas.
-- **Particionamento:** Se a tabela `images` crescer para milhões de linhas, ela poderá ser particionada por `created_at` ou `project_id`.
+## Conclusão
+A combinação de PostgreSQL + Redis resolve o desafio de consultas de alta frequência, enquanto o Cloudflare R2 fornece uma solução de storage robusta, segura e de baixo custo para os ativos de mídia do projeto.

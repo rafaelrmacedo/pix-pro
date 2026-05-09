@@ -9,6 +9,7 @@ import BaseCommand from "../../shared/src/cqrs/base-command.js";
 import { COMMAND_TYPES } from "../../shared/src/cqrs/command-types.js";
 import RabbitMQEventBus from "../../shared/src/events/event-bus.js";
 import { MQ_QUEUES } from "../../shared/src/mq-topology.js";
+import { uploadToCDN, isConfigured as isCDNConfigured } from "./storage-utils.js";
 
 const { Pool } = pg;
 const { connectRedis } = redisUtils;
@@ -34,11 +35,14 @@ app.use(express.json());
 async function isAlreadyProcessed(imageId) {
   if (!redis) return false;
   const key = `processed_image:${imageId}`;
-  const result = await redis.set(key, "true", {
-    NX: true,
-    EX: 86400 // 24h
-  });
-  return result === null;
+  
+  // Check if it exists first
+  const exists = await redis.get(key);
+  if (exists === "completed") return true;
+  
+  // If not completed, we mark it as "processing"
+  await redis.set(key, "processing", { EX: 3600 });
+  return false;
 }
 
 app.get("/health", (_req, res) => {
@@ -47,7 +51,8 @@ app.get("/health", (_req, res) => {
     status: "ok",
     rabbitmq: mq ? "connected" : "disconnected",
     redis: redis?.isOpen ? "connected" : "disconnected",
-    database: pool ? "connected" : "disconnected"
+    database: pool ? "connected" : "disconnected",
+    cdn: isCDNConfigured ? "configured" : "mock-mode"
   });
 });
 
@@ -121,49 +126,57 @@ async function startConsumer() {
 
       try {
         // idempotency check
-        const alreadyProcessed = await isAlreadyProcessed(imageId);
-        if (alreadyProcessed) {
-          logger.warn(`Image ${imageId} already processed. Skipping.`, { correlationId });
+        const alreadyDone = await isAlreadyProcessed(imageId);
+        if (alreadyDone) {
+          logger.warn(`Image ${imageId} already completed. Skipping.`, { correlationId });
           return mq.channel.ack(msg);
         }
 
         logger.info(`Processing image: ${imageId}`, { correlationId });
 
-        // Persist initial image state in DB
+        // Upsert initial image state in DB (to allow retries)
         await pool.query(
-          "INSERT INTO images (id, project_id, original_url, status, created_at) VALUES ($1, $2, $3, $4, $5)",
+          "INSERT INTO images (id, project_id, original_url, status, created_at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE SET status = 'processing'",
           [imageId, content.projectId, content.originalUrl, "processing", new Date().toISOString()]
         );
 
-        // processing (only simulation yet)
+        // processing simulation
         setTimeout(async () => {
           try {
-            const processedUrl = String(content.originalUrl).replace("mock://", "processed://");
+            const mockProcessedBuffer = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QAwADCAICyt9uGAAAAABJRU5ErkJggg==", "base64");
+            const fileName = `processed-${imageId}.png`;
+
+            logger.info(`Attempting CDN upload for: ${fileName}`, { correlationId });
+            
+            const cdnUrl = await uploadToCDN(mockProcessedBuffer, fileName, "image/png");
+
             const processedData = {
               imageId,
               projectId: content.projectId,
-              processedUrl,
-              metadata: { aiResult: "Person detected", confidence: 0.98 },
+              processedUrl: cdnUrl,
+              metadata: { aiResult: "Person detected", storage: isCDNConfigured ? "R2" : "mock" },
               processedAt: new Date().toISOString()
             };
 
-            // Update DB with completed status
             await pool.query(
               "UPDATE images SET status = $1, cdn_url = $2 WHERE id = $3",
-              ["completed", processedUrl, imageId]
+              ["completed", cdnUrl, imageId]
             );
 
-            // Invalidate project images cache in Redis
+            // Mark as completed in Redis
             if (redis) {
+              const key = `processed_image:${imageId}`;
+              await redis.set(key, "completed", { EX: 86400 });
               await redis.del(`projects:${content.projectId}:images`);
             }
 
             await eventBus.publish(EVENT_TYPES.IMAGE_PROCESSED, processedData, correlationId);
             mq.channel.ack(msg);
-            logger.info(`Image processed and event emitted: ${imageId}`, { correlationId });
+            logger.info(`Image processed and uploaded: ${imageId}`, { correlationId, cdnUrl });
           } catch (err) {
+            console.error(`!!! CRITICAL UPLOAD ERROR for ${imageId}:`, err);
             logger.error(`Error finishing processing for ${imageId}`, err, { correlationId });
-            mq.channel.nack(msg, false, true);
+            mq.channel.nack(msg, false, true); // Requeue to try again
           }
         }, 2000);
 
@@ -179,25 +192,21 @@ async function startConsumer() {
 
 async function bootstrap() {
   try {
-    // Start server first so health check works and it doesn't block
     app.listen(port, () => {
       logger.info(`image-processing-service listening on ${port}`);
     });
 
-    // connect Database
     logger.info("Connecting to PostgreSQL...");
     pool = new Pool({ connectionString: databaseUrl });
     await pool.query("SELECT 1");
     logger.info("Connected to PostgreSQL");
 
-    // connect Redis
     logger.info("Connecting to Redis...");
     redis = await connectRedis(redisUrl, "image-processing-service");
 
-    // connect RabbitMQ
     logger.info("Connecting to RabbitMQ...");
     mq = await connectMQ(rabbitUrl, "image-processing-service");
-
+    
     logger.info("Initializing EventBus...");
     eventBus = new RabbitMQEventBus({
       channel: mq.channel,
