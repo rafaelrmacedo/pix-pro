@@ -7,7 +7,7 @@ import mqUtils from "../../shared/src/mq-utils.js";
 import loggerShared from "../../shared/src/logger.js";
 import middlewareShared from "../../shared/src/middleware.js";
 import { EVENT_TYPES } from "../../shared/src/events/event-types.js";
-import { RabbitMQEventBus } from "../../shared/src/events/event-bus.js";
+import RabbitMQEventBus from "../../shared/src/events/event-bus.js";
 import { MQ_QUEUES } from "../../shared/src/mq-topology.js";
 
 const { Pool } = pg;
