@@ -63,8 +63,12 @@ app.get("/health", (_req, res) => {
  * Endpoint para receber imagens reais via multipart/form-data
  */
 app.post("/images/jobs", upload.single("image"), async (req, res) => {
-  const { projectId = "project-001" } = req.body || {};
+  const { projectId } = req.body || {};
   const cid = req.headers["x-correlation-id"];
+
+  if (!projectId) {
+    return res.status(400).json({ error: "Missing 'projectId' in request body" });
+  }
 
   if (!req.file) {
     return res.status(400).json({ error: "No image file provided in 'image' field" });
@@ -191,13 +195,13 @@ async function startConsumer() {
             logger.info(`Image processing finished: ${imageId}`, { correlationId, cdnUrl });
           } catch (err) {
             console.error(`!!! UPLOAD ERROR for ${imageId}:`, err);
-            mq.channel.nack(msg, false, true);
+            mq.channel.nack(msg, false, false);
           }
         }, 2000);
 
       } catch (err) {
         logger.error(`Error processing message for ${imageId}`, err, { correlationId });
-        mq.channel.nack(msg, false, true);
+        mq.channel.nack(msg, false, false);
       }
     });
   } catch (err) {
