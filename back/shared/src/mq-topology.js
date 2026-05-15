@@ -28,16 +28,6 @@ export const MQ_BINDINGS = [
     queue: MQ_QUEUES.IMAGE_COMMANDS,
     exchange: MQ_EXCHANGES.COMMANDS,
     routingKey: COMMAND_TYPES.REQUEST_IMAGE_PROCESSING
-  },
-  {
-    queue: MQ_QUEUES.NOTIFICATIONS,
-    exchange: MQ_EXCHANGES.EVENTS,
-    routingKey: "image.*"
-  },
-  {
-    queue: MQ_QUEUES.NOTIFICATIONS,
-    exchange: MQ_EXCHANGES.EVENTS,
-    routingKey: "project.*"
   }
 ];
 

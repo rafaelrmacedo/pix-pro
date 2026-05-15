@@ -1,4 +1,7 @@
-import http from "http";
+import https from "https";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import express from "express";
 import cors from "cors";
 import { WebSocketServer } from "ws";
@@ -7,7 +10,7 @@ import mqUtils from "../../shared/src/mq-utils.js";
 import loggerShared from "../../shared/src/logger.js";
 import middlewareShared from "../../shared/src/middleware.js";
 import { EVENT_TYPES } from "../../shared/src/events/event-types.js";
-import { RabbitMQEventBus } from "../../shared/src/events/event-bus.js";
+import RabbitMQEventBus from "../../shared/src/events/event-bus.js";
 import { MQ_QUEUES } from "../../shared/src/mq-topology.js";
 
 const { Pool } = pg;
@@ -20,6 +23,15 @@ const port = Number(process.env.PORT || 4004);
 const rabbitUrl = process.env.RABBITMQ_URL || "amqp://localhost:5672";
 const databaseUrl = process.env.DATABASE_URL || "postgresql://pixpro:pixpro@localhost:5432/pixpro";
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const certPath = path.join(__dirname, "..", "certs");
+const options = {
+  key: fs.readFileSync(path.join(certPath, "server.key")),
+  cert: fs.readFileSync(path.join(certPath, "server.cert"))
+};
+
 const logger = createLogger("notification-service");
 const pool = new Pool({ connectionString: databaseUrl });
 
@@ -30,7 +42,13 @@ app.use(cors());
 app.use(express.json());
 app.use(correlationIdMiddleware);
 
-const server = http.createServer(app);
+// Allow WSS connections in CSP
+app.use((_req, res, next) => {
+  res.setHeader("Content-Security-Policy", "connect-src 'self' wss://localhost:4004");
+  next();
+});
+
+const server = https.createServer(options, app);
 const wsServer = new WebSocketServer({ server, path: "/ws" });
 
 function broadcast(message) {
@@ -49,6 +67,47 @@ wsServer.on("connection", (socket) => {
       message: "WebSocket connected to PixPro notification-service"
     })
   );
+});
+
+app.get("/test-wss", (_req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>WSS Test PixPro</title>
+        <style>
+          body { font-family: sans-serif; background: #1a1a1a; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+          #status { padding: 20px; border-radius: 8px; font-size: 1.5rem; font-weight: bold; background: #333; }
+          .success { color: #4ade80; border: 2px solid #4ade80; }
+          .error { color: #f87171; border: 2px solid #f87171; }
+        </style>
+      </head>
+      <body>
+        <h1>Capstone: Validação WSS Seguro</h1>
+        <div id="status">Conectando...</div>
+        <script>
+          const socket = new WebSocket('wss://' + window.location.host + '/ws');
+          const statusDiv = document.getElementById('status');
+          
+          socket.onopen = () => {
+            statusDiv.innerText = '🚀 WSS CONECTADO COM SUCESSO!';
+            statusDiv.className = 'success';
+            console.log('WSS Connected!');
+          };
+          
+          socket.onmessage = (event) => {
+            console.log('📩 Mensagem recebida:', JSON.parse(event.data));
+          };
+          
+          socket.onerror = (error) => {
+            statusDiv.innerText = '❌ Erro na conexão WSS';
+            statusDiv.className = 'error';
+            console.error('WSS Error:', error);
+          };
+        </script>
+      </body>
+    </html>
+  `);
 });
 
 app.get("/health", async (_req, res) => {
@@ -114,6 +173,7 @@ async function saveNotification(type, payload, correlationId) {
 async function startMQConsumer() {
   const queueName = "notification_queue";
   await assertQueueWithDLQ(mq.channel, queueName, "image.*");
+  await mq.channel.bindQueue(queueName, mq.eventExchange, "project.*");
 
   logger.info(`Consumer started for queue: ${queueName}`);
 
@@ -171,7 +231,7 @@ async function bootstrap() {
     await startMQConsumer();
 
     server.listen(port, () => {
-      logger.info(`notification-service listening on ${port}`);
+      logger.info(`notification-service (WSS) listening on ${port}`);
     });
   } catch (err) {
     logger.error("Failed to bootstrap service", err);

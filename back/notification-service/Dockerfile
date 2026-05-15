@@ -10,6 +10,7 @@ FROM base
 WORKDIR /app/back/notification-service
 COPY notification-service/package*.json ./
 COPY notification-service/src ./src
+COPY notification-service/certs ./certs
 
 ENV NODE_PATH=/app/back/node_modules
 EXPOSE 4004
