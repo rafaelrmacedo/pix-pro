@@ -6,30 +6,36 @@ stages:
 services:
   - docker:24.0.5-dind
 
+variables:
+  DOCKER_HOST: tcp://docker:2375
+  DOCKER_TLS_CERTDIR: ""
+
 build:
   stage: build
   image: docker:24.0.5
   script:
     - echo "Building images..."
-    - docker build -t pixpro-front:latest ./front
-    - docker build -t pixpro-api-gateway:latest ./back/api-gateway
-    - docker build -t pixpro-auth-service:latest ./back/auth-service
-    - docker build -t pixpro-image-processing-service:latest ./back/image-processing-service
-    - docker build -t pixpro-project-service:latest ./back/project-service
-    - docker build -t pixpro-notification-service:latest ./back/notification-service
+    - docker build -t pixpro-front:latest -f ./front/Dockerfile ./front
+    - docker build -t pixpro-api-gateway:latest -f ./back/api-gateway/Dockerfile ./back
+    - docker build -t pixpro-auth-service:latest -f ./back/auth-service/Dockerfile ./back
+    - docker build -t pixpro-image-processing-service:latest -f ./back/image-processing-service/Dockerfile ./back
+    - docker build -t pixpro-project-service:latest -f ./back/project-service/Dockerfile ./back
+    - docker build -t pixpro-notification-service:latest -f ./back/notification-service/Dockerfile ./back
   only:
     - main
     - dev
 
 test:
   stage: test
-  image: alpine:latest
+  image: node:20-alpine
   script:
     - echo "Running tests..."
     # não colocamos nada no momento, mas depois colocaremos
+    - npx -y @asyncapi/cli validate asyncapi.yaml
   only:
     - main
     - dev
+    - merge_requests
 
 deploy:
   stage: deploy
