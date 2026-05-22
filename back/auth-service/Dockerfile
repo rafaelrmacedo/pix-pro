@@ -1,14 +1,13 @@
-FROM node:20-alpine AS builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm install
-COPY . .
-RUN npm run build
-
-FROM node:20-alpine
-WORKDIR /app
+FROM node:20-alpine AS base
+WORKDIR /app/back
 COPY package*.json ./
 RUN npm install --omit=dev
-COPY --from=builder /app/dist ./dist
+COPY shared ./shared
+
+FROM base
+WORKDIR /app/back/auth-service
+COPY auth-service/package*.json ./
+COPY auth-service/src ./src
+
 EXPOSE 4001
 CMD ["npm", "run", "start:prod"]
