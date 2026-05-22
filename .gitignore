@@ -30,3 +30,7 @@ Thumbs.db
 .vscode/
 .idea/
 
+# AsyncAPI generated docs
+docs/index.html
+docs/css/
+docs/js/
