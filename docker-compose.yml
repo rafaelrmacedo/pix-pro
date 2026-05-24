@@ -53,8 +53,8 @@ services:
 
   auth-service:
     build:
-      context: ./back/auth-service
-      dockerfile: Dockerfile
+      context: ./back
+      dockerfile: auth-service/Dockerfile
     ports:
       - "4001:4001"
     environment:
@@ -161,7 +161,7 @@ services:
       context: ./back
       dockerfile: notification-service/Dockerfile
     ports:
-      - "4004:4004"
+      - "4004-4005:4004"
     environment:
       - PORT=4004
       - DATABASE_URL=${DATABASE_URL}
@@ -180,7 +180,7 @@ services:
       timeout: 5s
       retries: 3
     deploy:
-      replicas: 1
+      replicas: 2
       restart_policy:
         condition: on-failure
       update_config:

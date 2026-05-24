@@ -6,6 +6,7 @@ import express from "express";
 import cors from "cors";
 import { WebSocketServer } from "ws";
 import pg from "pg";
+import { createClient } from "redis";
 import mqUtils from "../../shared/src/mq-utils.js";
 import loggerShared from "../../shared/src/logger.js";
 import middlewareShared from "../../shared/src/middleware.js";
@@ -34,9 +35,12 @@ const options = {
 
 const logger = createLogger("notification-service");
 const pool = new Pool({ connectionString: databaseUrl });
+const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
 
 let mq = null;
 let eventBus = null;
+let redisPub = null;
+let redisSub = null;
 
 app.use(cors());
 app.use(express.json());
@@ -51,13 +55,24 @@ app.use((_req, res, next) => {
 const server = https.createServer(options, app);
 const wsServer = new WebSocketServer({ server, path: "/ws" });
 
-function broadcast(message) {
+async function broadcast(message) {
   const payload = JSON.stringify(message);
-  wsServer.clients.forEach((client) => {
-    if (client.readyState === 1) {
-      client.send(payload);
+  if (redisPub && redisPub.isReady) {
+    try {
+      await redisPub.publish('websocket_backplane', payload);
+    } catch (err) {
+      logger.error("Failed to publish to Redis", err);
+      wsServer.clients.forEach((client) => {
+        if (client.readyState === 1) client.send(payload);
+      });
     }
-  });
+  } else {
+    wsServer.clients.forEach((client) => {
+      if (client.readyState === 1) {
+        client.send(payload);
+      }
+    });
+  }
 }
 
 wsServer.on("connection", (socket) => {
@@ -86,24 +101,49 @@ app.get("/test-wss", (_req, res) => {
         <h1>Capstone: Validação WSS Seguro</h1>
         <div id="status">Conectando...</div>
         <script>
-          const socket = new WebSocket('wss://' + window.location.host + '/ws');
+          const ports = ['4004', '4005'];
+          let currentPortIndex = 0;
+          let socket = null;
           const statusDiv = document.getElementById('status');
+
+          function connect() {
+            const port = ports[currentPortIndex];
+            statusDiv.innerText = 'Conectando na porta ' + port + '...';
+            statusDiv.className = '';
+            
+            socket = new WebSocket('wss://' + window.location.hostname + ':' + port + '/ws');
+            
+            socket.onopen = () => {
+              statusDiv.innerText = '🚀 WSS CONECTADO COM SUCESSO (Porta ' + port + ')!';
+              statusDiv.className = 'success';
+              console.log('WSS Connected to port ' + port);
+            };
+            
+            socket.onmessage = (event) => {
+              const msg = JSON.parse(event.data);
+              console.log('📩 Mensagem recebida:', msg);
+              const msgDiv = document.createElement('div');
+              msgDiv.innerText = "[" + new Date().toLocaleTimeString() + "] Recebido: " + JSON.stringify(msg);
+              msgDiv.style.marginTop = '10px';
+              msgDiv.style.fontSize = '1rem';
+              msgDiv.className = 'success';
+              document.body.appendChild(msgDiv);
+            };
+            
+            socket.onerror = (error) => {
+              console.error('WSS Error on port ' + port);
+            };
+            
+            socket.onclose = () => {
+              statusDiv.innerText = '❌ Conexão caiu (Porta ' + port + '). Tentando reconectar...';
+              statusDiv.className = 'error';
+              console.log('Connection closed, retrying other instance...');
+              currentPortIndex = (currentPortIndex + 1) % ports.length;
+              setTimeout(connect, 3000);
+            };
+          }
           
-          socket.onopen = () => {
-            statusDiv.innerText = '🚀 WSS CONECTADO COM SUCESSO!';
-            statusDiv.className = 'success';
-            console.log('WSS Connected!');
-          };
-          
-          socket.onmessage = (event) => {
-            console.log('📩 Mensagem recebida:', JSON.parse(event.data));
-          };
-          
-          socket.onerror = (error) => {
-            statusDiv.innerText = '❌ Erro na conexão WSS';
-            statusDiv.className = 'error';
-            console.error('WSS Error:', error);
-          };
+          connect();
         </script>
       </body>
     </html>
@@ -226,6 +266,24 @@ async function bootstrap() {
     eventBus = new RabbitMQEventBus({
       channel: mq.channel,
       exchange: mq.eventExchange
+    });
+
+    // connect Redis Backplane
+    redisPub = createClient({ url: redisUrl });
+    redisSub = createClient({ url: redisUrl });
+
+    redisPub.on('error', err => logger.error('Redis Pub Error', err));
+    redisSub.on('error', err => logger.error('Redis Sub Error', err));
+
+    await redisPub.connect();
+    await redisSub.connect();
+
+    await redisSub.subscribe('websocket_backplane', (message) => {
+      wsServer.clients.forEach((client) => {
+        if (client.readyState === 1) {
+          client.send(message);
+        }
+      });
     });
 
     await startMQConsumer();
