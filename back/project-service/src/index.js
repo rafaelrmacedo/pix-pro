@@ -4,6 +4,7 @@ import pg from "pg";
 import loggerShared from "../../shared/src/logger.js";
 import middlewareShared from "../../shared/src/middleware.js";
 import redisUtils from "../../shared/src/redis-utils.js";
+import { createHttpObservability } from "../../shared/src/observability.js";
 
 const { Pool } = pg;
 const { createLogger } = loggerShared;
@@ -11,6 +12,11 @@ const { correlationIdMiddleware } = middlewareShared;
 const { connectRedis, getOrSetCache } = redisUtils;
 
 const logger = createLogger("project-service");
+const observability = createHttpObservability({
+  serviceName: "project-service",
+  logger,
+  criticalModule: "projects"
+});
 
 const app = express();
 const port = Number(process.env.PORT || 4003);
@@ -26,6 +32,10 @@ let redis = null;
 app.use(cors());
 app.use(express.json());
 app.use(correlationIdMiddleware);
+app.use(observability.requestLogger);
+app.use(observability.metricsMiddleware);
+
+app.get("/metrics", observability.metricsHandler);
 
 app.get("/health", async (_req, res) => {
   try {
@@ -46,6 +56,35 @@ app.get("/health", async (_req, res) => {
   }
 });
 
+app.get("/observability/simulate-error", (req, res) => {
+  const cid = req.correlationId;
+
+  if (process.env.NODE_ENV === "production") {
+    return res.status(404).json({ error: "Not Found", requestId: cid });
+  }
+
+  const error = new Error("Controlled failure in project-service observability simulation");
+  observability.recordModuleFailure({
+    module: "projects",
+    operation: "simulate-error",
+    reason: "controlled_failure"
+  });
+
+  logger.error("Controlled failure simulated in projects module", error, {
+    correlationId: cid,
+    requestId: cid,
+    module: "projects",
+    operation: "simulate-error",
+    route: "/observability/simulate-error"
+  });
+
+  res.status(503).json({
+    error: "Controlled observability failure",
+    module: "projects",
+    requestId: cid
+  });
+});
+
 /**
  * Get all projects (with Redis caching)
  */
@@ -59,8 +98,17 @@ app.get("/projects", async (req, res) => {
     });
     res.json({ projects });
   } catch (err) {
-    logger.error("Failed to fetch projects", err, { correlationId: cid });
-    res.status(500).json({ error: "Internal Server Error" });
+    observability.recordModuleFailure({
+      module: "projects",
+      operation: "list-projects",
+      reason: "database_or_cache_failure"
+    });
+    logger.error("Failed to fetch projects", err, {
+      correlationId: cid,
+      module: "projects",
+      operation: "list-projects"
+    });
+    res.status(500).json({ error: "Internal Server Error", requestId: cid });
   }
 });
 
@@ -81,8 +129,18 @@ app.get("/projects/:id/images", async (req, res) => {
     });
     res.json({ images });
   } catch (err) {
-    logger.error(`Failed to fetch images for project ${id}`, err, { correlationId: cid });
-    res.status(500).json({ error: "Internal Server Error" });
+    observability.recordModuleFailure({
+      module: "projects",
+      operation: "list-project-images",
+      reason: "database_or_cache_failure"
+    });
+    logger.error(`Failed to fetch images for project ${id}`, err, {
+      correlationId: cid,
+      module: "projects",
+      operation: "list-project-images",
+      projectId: id
+    });
+    res.status(500).json({ error: "Internal Server Error", requestId: cid });
   }
 });
 
@@ -104,11 +162,25 @@ app.post("/projects", async (req, res) => {
       await redis.del("projects:all");
     }
 
-    logger.info(`Project created: ${id}`, { correlationId: cid });
+    logger.info(`Project created: ${id}`, {
+      correlationId: cid,
+      module: "projects",
+      operation: "create-project",
+      projectId: id
+    });
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    logger.error("Failed to create project", err, { correlationId: cid });
-    res.status(500).json({ error: "Internal Server Error" });
+    observability.recordModuleFailure({
+      module: "projects",
+      operation: "create-project",
+      reason: "database_failure"
+    });
+    logger.error("Failed to create project", err, {
+      correlationId: cid,
+      module: "projects",
+      operation: "create-project"
+    });
+    res.status(500).json({ error: "Internal Server Error", requestId: cid });
   }
 });
 
