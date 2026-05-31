@@ -6,23 +6,23 @@ import { User } from 'src/users/users.entity';
 
 @Controller('auth')
 export class AuthController {
-    constructor(private readonly authService: AuthService) { }
+  constructor(private readonly authService: AuthService) {}
 
-    @Post('register')
-    async signup(@Body() body: { username: string; password: string }) {
-        await this.authService.register(body.username, body.password);
-        return { success: true };
-    }
+  @Post('register')
+  async signup(@Body() body: { username: string; password: string }) {
+    await this.authService.register(body.username, body.password);
+    return { success: true };
+  }
 
-    @Post('login')
-    @UseGuards(AuthGuard('local'))
-    signin(@Req() req: Request) {
-        return this.authService.login(req.user as User);
-    }
+  @Post('login')
+  @UseGuards(AuthGuard('local'))
+  signin(@Req() req: Request) {
+    return this.authService.login(req.user as User);
+  }
 
-    @UseGuards(AuthGuard('jwt'))
-    @Get('profile')
-    getProfile(@Req() req: Request) {
-        return req.user;
-    }
+  @UseGuards(AuthGuard('jwt'))
+  @Get('profile')
+  getProfile(@Req() req: Request) {
+    return req.user;
+  }
 }
