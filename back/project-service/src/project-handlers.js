@@ -19,6 +19,7 @@ export function createProjectHandlers({ writeRepository, readModel, eventBus }) 
         const project = {
           id: command.payload.id || `project-${randomUUID()}`,
           name: normalizeProjectName(command.payload.name),
+          userId: command.payload.userId || "system",
           createdAt: command.payload.createdAt || now
         };
 
@@ -27,7 +28,8 @@ export function createProjectHandlers({ writeRepository, readModel, eventBus }) 
         await eventBus.publish(EVENT_TYPES.PROJECT_CREATED, savedProject, {
           aggregateId: savedProject.id,
           aggregateType: "project",
-          source: "project-service"
+          source: "project-service",
+          userId: savedProject.userId
         });
 
         return {
@@ -39,10 +41,13 @@ export function createProjectHandlers({ writeRepository, readModel, eventBus }) 
     },
 
     queryHandlers: {
-      [QUERY_TYPES.LIST_PROJECTS]: async (query) => ({
-        source: "redis-read-model",
-        projects: await readModel.listProjects(query.filters)
-      }),
+      [QUERY_TYPES.LIST_PROJECTS]: async (query) => {
+        const userId = query.filters?.userId || "system";
+        return {
+          source: "redis-read-model",
+          projects: await readModel.listProjects(userId, query.filters)
+        };
+      },
 
       [QUERY_TYPES.GET_PROJECT_BY_ID]: async (query) => ({
         source: "redis-read-model",

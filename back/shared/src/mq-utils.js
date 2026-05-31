@@ -85,7 +85,7 @@ export async function publishCommand(channel, exchange, routingKey, command, cor
   }
 }
 
-export async function assertQueueWithDLQ(channel, queueName, routingKey) {
+export async function assertQueueWithDLQ(channel, queueName, routingKey, exchangeName = EXCHANGE_NAME) {
   const dlqName = `${queueName}.dlq`;
 
   // Assert DLQ
@@ -102,7 +102,7 @@ export async function assertQueueWithDLQ(channel, queueName, routingKey) {
   });
 
   if (routingKey) {
-    await channel.bindQueue(queueName, EXCHANGE_NAME, routingKey);
+    await channel.bindQueue(queueName, exchangeName, routingKey);
   }
 
   return { queue: queueName, dlq: dlqName };

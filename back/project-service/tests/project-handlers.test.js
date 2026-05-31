@@ -40,6 +40,7 @@ describe("Project Handlers", () => {
     expect(savedProjects[0]).toEqual({
       id: "project-1",
       name: "Portfolio",
+      userId: "system",
       createdAt: savedProjects[0].createdAt
     });
     expect(publishedEvents[0].type).toBe(EVENT_TYPES.PROJECT_CREATED);
@@ -53,7 +54,8 @@ describe("Project Handlers", () => {
       writeRepository: {},
       eventBus: {},
       readModel: {
-        async listProjects(filters) {
+        async listProjects(userId, filters) {
+          expect(userId).toBe("system");
           expect(filters).toEqual({ name: "Port" });
           return projects;
         },

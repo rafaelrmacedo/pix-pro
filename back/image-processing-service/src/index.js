@@ -65,6 +65,7 @@ app.get("/health", (_req, res) => {
 app.post("/images/jobs", upload.single("image"), async (req, res) => {
   const { projectId } = req.body || {};
   const cid = req.headers["x-correlation-id"];
+  const userId = req.headers["x-user-id"] || "system";
 
   if (!projectId) {
     return res.status(400).json({ error: "Missing 'projectId' in request body" });
@@ -83,7 +84,7 @@ app.post("/images/jobs", upload.single("image"), async (req, res) => {
     const imageId = `img-${Date.now()}`;
     const fileName = `original-${imageId}-${req.file.originalname}`;
 
-    logger.info(`Received real image upload: ${req.file.originalname} (${req.file.size} bytes)`, { correlationId: cid });
+    logger.info(`Received real image upload: ${req.file.originalname} (${req.file.size} bytes) for user ${userId}`, { correlationId: cid });
 
     // 1. Upload original image to CDN immediately
     const originalUrl = await uploadToCDN(req.file.buffer, fileName, req.file.mimetype);
@@ -93,6 +94,7 @@ app.post("/images/jobs", upload.single("image"), async (req, res) => {
       imageId,
       projectId,
       originalUrl,
+      userId,
       requestedAt: new Date().toISOString()
     });
 
@@ -100,6 +102,7 @@ app.post("/images/jobs", upload.single("image"), async (req, res) => {
       imageId,
       projectId,
       originalUrl,
+      userId,
       uploadedAt: new Date().toISOString()
     };
 
@@ -129,7 +132,7 @@ async function startConsumer() {
   try {
     const queueName = MQ_QUEUES.IMAGE_COMMANDS || "image_processing_queue";
     logger.info(`Asserting queue with DLQ: ${queueName}`);
-    await assertQueueWithDLQ(mq.channel, queueName, EVENT_TYPES.IMAGE_UPLOADED);
+    await assertQueueWithDLQ(mq.channel, queueName, COMMAND_TYPES.REQUEST_IMAGE_PROCESSING, mq.commandExchange);
 
     logger.info(`Consumer started for queue: ${queueName}`);
 
@@ -154,7 +157,7 @@ async function startConsumer() {
           return mq.channel.ack(msg);
         }
 
-        logger.info(`Processing image: ${imageId}`, { correlationId });
+        logger.info(`Processing image: ${imageId} for user: ${content.userId}`, { correlationId });
 
         await pool.query(
           "INSERT INTO images (id, project_id, original_url, status, created_at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE SET status = 'processing'",
@@ -175,6 +178,7 @@ async function startConsumer() {
               imageId,
               projectId: content.projectId,
               processedUrl: cdnUrl,
+              userId: content.userId || "system",
               metadata: { aiResult: "Processing successful", storage: isCDNConfigured ? "R2" : "mock" },
               processedAt: new Date().toISOString()
             };
