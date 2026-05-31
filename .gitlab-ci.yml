@@ -1,20 +1,65 @@
 stages:
-  - build
+  - lint-and-validate
   - test
-  - deploy
+  - build-validation
 
-services:
-  - docker:24.0.5-dind
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - .npm/
+    - back/node_modules/
+    - back/auth-service/node_modules/
 
-variables:
-  DOCKER_HOST: tcp://docker:2375
-  DOCKER_TLS_CERTDIR: ""
-
-build:
-  stage: build
-  image: docker:24.0.5
+lint-backend:
+  stage: lint-and-validate
+  image: node:20-alpine
+  before_script:
+    - cd back
+    - npm install --prefer-offline --cache ../.npm
+    - cd auth-service && npm install --prefer-offline --cache ../../.npm && cd ..
   script:
-    - echo "Building images..."
+    - echo "Running global linter for all backend services..."
+    - npm run lint
+  only:
+    - main
+    - dev
+    - merge_requests
+
+validate-asyncapi:
+  stage: lint-and-validate
+  image: node:20-alpine
+  script:
+    - echo "Validating AsyncAPI schema..."
+    - npx -y @asyncapi/cli validate asyncapi.yaml
+  only:
+    - main
+    - dev
+    - merge_requests
+
+backend-tests:
+  stage: test
+  image: node:20-alpine
+  before_script:
+    - cd back
+    - npm install --prefer-offline --cache ../.npm
+  script:
+    - echo "Running backend unit and integration tests..."
+    - npm test
+  only:
+    - main
+    - dev
+    - merge_requests
+
+docker-build-check:
+  stage: build-validation
+  image: docker:24.0.5
+  services:
+    - docker:24.0.5-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  script:
+    - echo "Verifying all Docker builds compile and package successfully..."
     - docker build -t pixpro-front:latest -f ./front/Dockerfile ./front
     - docker build -t pixpro-api-gateway:latest -f ./back/api-gateway/Dockerfile ./back
     - docker build -t pixpro-auth-service:latest -f ./back/auth-service/Dockerfile ./back
@@ -24,26 +69,4 @@ build:
   only:
     - main
     - dev
-
-test:
-  stage: test
-  image: node:20-alpine
-  script:
-    - echo "Running tests..."
-    # não colocamos nada no momento, mas depois colocaremos
-    - npx -y @asyncapi/cli validate asyncapi.yaml
-  only:
-    - main
-    - dev
     - merge_requests
-
-deploy:
-  stage: deploy
-  image: docker:24.0.5
-  script:
-    - echo "Deploying to Docker Swarm..."
-    # modificar aqui depois para utilizar a VM da Jala
-    - docker stack deploy -c docker-stack.yml pixpro
-  only:
-    - main
-  when: manual

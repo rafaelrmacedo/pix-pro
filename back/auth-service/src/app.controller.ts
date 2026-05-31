@@ -6,7 +6,7 @@ export class AppController {
   constructor(private dataSource: DataSource) {}
 
   @Get('health')
-  async getHealth() {
+  getHealth() {
     const isDbConnected = this.dataSource.isInitialized;
     return {
       service: 'auth-service',
