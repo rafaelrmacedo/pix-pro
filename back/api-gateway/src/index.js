@@ -3,10 +3,16 @@ import cors from "cors";
 import CircuitBreaker from "opossum";
 import { createLogger } from "../../shared/src/logger.js";
 import { correlationIdMiddleware } from "../../shared/src/middleware.js";
+import { createHttpObservability } from "../../shared/src/observability.js";
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
 const logger = createLogger("api-gateway");
+const observability = createHttpObservability({
+  serviceName: "api-gateway",
+  logger,
+  criticalModule: "projects"
+});
 
 const services = {
   auth: process.env.AUTH_SERVICE_URL || "http://localhost:4001",
@@ -31,6 +37,7 @@ async function fetchWithTimeout(url, options = {}, correlationId) {
       ...options,
       headers: {
         ...options.headers,
+        "x-request-id": correlationId,
         "x-correlation-id": correlationId,
         "Content-Type": "application/json"
       },
@@ -60,6 +67,8 @@ Object.keys(breakers).forEach(key => {
 app.use(cors());
 app.use(json());
 app.use(correlationIdMiddleware);
+app.use(observability.requestLogger);
+app.use(observability.metricsMiddleware);
 
 app.get("/health", (_req, res) => {
   res.json({
@@ -71,6 +80,8 @@ app.get("/health", (_req, res) => {
     }, {})
   });
 });
+
+app.get("/metrics", observability.metricsHandler);
 
 async function proxyCall(serviceKey, path, req, res) {
   const url = `${services[serviceKey]}${path}`;
@@ -88,24 +99,34 @@ async function proxyCall(serviceKey, path, req, res) {
     logger.error(`Failed to proxy call to ${serviceKey}`, error, { correlationId: cid, path });
 
     if (error.name === "AbortError") {
-      return res.status(504).json({ error: "Gateway Timeout", target: serviceKey });
+      return res.status(504).json({ error: "Gateway Timeout", target: serviceKey, requestId: cid });
     }
 
     if (breakers[serviceKey].opened) {
-      return res.status(503).json({ error: "Service temporarily unavailable (Circuit Breaker)", target: serviceKey });
+      return res.status(503).json({
+        error: "Service temporarily unavailable (Circuit Breaker)",
+        target: serviceKey,
+        requestId: cid
+      });
     }
 
-    res.status(502).json({ error: "Bad Gateway", details: error.message });
+    res.status(502).json({ error: "Bad Gateway", details: error.message, requestId: cid });
   }
 }
 
 async function proxyJsonRequest(serviceKey, targetPath, req, res) {
+  const cid = req.correlationId;
+
   try {
     const query = new URLSearchParams(req.query).toString();
     const targetUrl = `${services[serviceKey]}${targetPath}${query ? `?${query}` : ""}`;
     const options = {
       method: req.method,
-      headers: { "Content-Type": "application/json" }
+      headers: {
+        "Content-Type": "application/json",
+        "x-request-id": cid,
+        "x-correlation-id": cid
+      }
     };
 
     if (!["GET", "HEAD"].includes(req.method)) {
@@ -116,9 +137,14 @@ async function proxyJsonRequest(serviceKey, targetPath, req, res) {
     const payload = await response.json();
     res.status(response.status).json(payload);
   } catch (error) {
+    logger.error(`Failed to reach ${serviceKey}-service`, error, {
+      correlationId: cid,
+      path: targetPath
+    });
     res.status(502).json({
       error: `Failed to reach ${serviceKey}-service`,
-      details: error.message
+      details: error.message,
+      requestId: cid
     });
   }
 }
@@ -132,6 +158,14 @@ app.get("/api/:service/health", async (req, res) => {
 app.post("/images/jobs", async (req, res) => proxyCall("image", "/images/jobs", req, res));
 app.get("/projects", async (req, res) => proxyCall("project", "/projects", req, res));
 app.post("/projects", async (req, res) => proxyCall("project", "/projects", req, res));
+
+app.get("/observability/simulate-error", async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    return res.status(404).json({ error: "Not Found", requestId: req.correlationId });
+  }
+
+  return proxyCall("project", "/observability/simulate-error", req, res);
+});
 
 app.get("/projects", async (req, res) => proxyJsonRequest("project", "/projects", req, res));
 app.get("/projects/:id", async (req, res) => proxyJsonRequest("project", `/projects/${req.params.id}`, req, res));

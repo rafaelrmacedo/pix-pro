@@ -1,17 +1,30 @@
 import { randomUUID } from "crypto";
 
 /**
- * Middleware to handle Correlation IDs.
- * Generates a new CID if not present and sets it in the request and response headers.
+ * Middleware to handle request/correlation IDs.
+ * Reuses x-request-id or x-correlation-id when present and exposes both headers.
  */
 export function correlationIdMiddleware(req, res, next) {
-  const cidHeader = "x-correlation-id";
-  const cid = req.headers[cidHeader] || randomUUID();
+  const requestIdHeader = "x-request-id";
+  const correlationIdHeader = "x-correlation-id";
+  const incomingRequestId = getFirstHeaderValue(req.headers[requestIdHeader]);
+  const incomingCorrelationId = getFirstHeaderValue(req.headers[correlationIdHeader]);
+  const requestId = incomingRequestId || incomingCorrelationId || randomUUID();
 
-  req.correlationId = cid;
-  res.setHeader(cidHeader, cid);
+  req.requestId = requestId;
+  req.correlationId = requestId;
+  res.setHeader(requestIdHeader, requestId);
+  res.setHeader(correlationIdHeader, requestId);
 
   next();
+}
+
+function getFirstHeaderValue(value) {
+  if (Array.isArray(value)) {
+    return value[0];
+  }
+
+  return value;
 }
 
 export default { correlationIdMiddleware };
