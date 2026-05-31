@@ -4,6 +4,7 @@ import CircuitBreaker from "opossum";
 import { createLogger } from "../../shared/src/logger.js";
 import { correlationIdMiddleware } from "../../shared/src/middleware.js";
 import { createHttpObservability } from "../../shared/src/observability.js";
+import { authMiddleware } from "./jwt-middleware.js";
 
 const app = express();
 const port = Number(process.env.PORT || 4000);
@@ -38,8 +39,7 @@ async function fetchWithTimeout(url, options = {}, correlationId) {
       headers: {
         ...options.headers,
         "x-request-id": correlationId,
-        "x-correlation-id": correlationId,
-        "Content-Type": "application/json"
+        "x-correlation-id": correlationId
       },
       signal: controller.signal
     });
@@ -65,10 +65,18 @@ Object.keys(breakers).forEach(key => {
 });
 
 app.use(cors());
-app.use(json());
 app.use(correlationIdMiddleware);
 app.use(observability.requestLogger);
 app.use(observability.metricsMiddleware);
+
+// Use express.json() only for non-multipart requests to preserve stream boundaries
+app.use((req, res, next) => {
+  const contentType = req.headers["content-type"] || "";
+  if (contentType.includes("multipart/form-data")) {
+    return next();
+  }
+  json()(req, res, next);
+});
 
 app.get("/health", (_req, res) => {
   res.json({
@@ -88,11 +96,37 @@ async function proxyCall(serviceKey, path, req, res) {
   const cid = req.correlationId;
 
   try {
-    const response = await breakers[serviceKey].fire(url, {
-      method: req.method,
-      body: req.method !== "GET" ? JSON.stringify(req.body) : undefined
-    }, cid);
+    const headers = {
+      "x-request-id": cid,
+      "x-correlation-id": cid
+    };
 
+    if (req.user) {
+      headers["x-user-id"] = req.user.sub;
+    }
+
+    if (req.headers["content-type"]) {
+      headers["content-type"] = req.headers["content-type"];
+    }
+
+    const hasBody = !["GET", "HEAD"].includes(req.method);
+    const fetchOptions = {
+      method: req.method,
+      headers
+    };
+
+    if (hasBody) {
+      // If content type is JSON, stringify body. Otherwise pass stream.
+      const contentType = req.headers["content-type"] || "";
+      if (contentType.includes("application/json")) {
+        fetchOptions.body = JSON.stringify(req.body);
+      } else {
+        fetchOptions.body = req;
+        fetchOptions.duplex = "half"; // Node fetch requirement for streams
+      }
+    }
+
+    const response = await breakers[serviceKey].fire(url, fetchOptions, cid);
     const payload = await response.json();
     res.status(response.status).json(payload);
   } catch (error) {
@@ -102,7 +136,7 @@ async function proxyCall(serviceKey, path, req, res) {
       return res.status(504).json({ error: "Gateway Timeout", target: serviceKey, requestId: cid });
     }
 
-    if (breakers[serviceKey].opened) {
+    if (breakers[serviceKey] && breakers[serviceKey].opened) {
       return res.status(503).json({
         error: "Service temporarily unavailable (Circuit Breaker)",
         target: serviceKey,
@@ -114,68 +148,45 @@ async function proxyCall(serviceKey, path, req, res) {
   }
 }
 
-async function proxyJsonRequest(serviceKey, targetPath, req, res) {
-  const cid = req.correlationId;
+// ==========================================
+// 1. PUBLIC AUTH ROUTES
+// ==========================================
+app.post("/api/auth/register", (req, res) => proxyCall("auth", "/auth/register", req, res));
+app.post("/api/auth/login", (req, res) => proxyCall("auth", "/auth/login", req, res));
 
-  try {
-    const query = new URLSearchParams(req.query).toString();
-    const targetUrl = `${services[serviceKey]}${targetPath}${query ? `?${query}` : ""}`;
-    const options = {
-      method: req.method,
-      headers: {
-        "Content-Type": "application/json",
-        "x-request-id": cid,
-        "x-correlation-id": cid
-      }
-    };
+// ==========================================
+// 2. PROTECTED ROUTE GROUPS
+// ==========================================
+app.use("/api/*", authMiddleware);
+app.use("/projects*", authMiddleware);
+app.use("/images*", authMiddleware);
 
-    if (!["GET", "HEAD"].includes(req.method)) {
-      options.body = JSON.stringify(req.body || {});
-    }
+// Profile
+app.get("/api/auth/profile", (req, res) => proxyCall("auth", "/auth/profile", req, res));
 
-    const response = await fetch(targetUrl, options);
-    const payload = await response.json();
-    res.status(response.status).json(payload);
-  } catch (error) {
-    logger.error(`Failed to reach ${serviceKey}-service`, error, {
-      correlationId: cid,
-      path: targetPath
-    });
-    res.status(502).json({
-      error: `Failed to reach ${serviceKey}-service`,
-      details: error.message,
-      requestId: cid
-    });
-  }
-}
+// Projects / Images (Clean routes routing table)
+app.get("/projects", (req, res) => proxyCall("project", "/projects", req, res));
+app.post("/projects", (req, res) => proxyCall("project", "/projects", req, res));
+app.get("/projects/:id", (req, res) => proxyCall("project", `/projects/${req.params.id}`, req, res));
+app.get("/projects/:id/images", (req, res) => proxyCall("project", `/projects/${req.params.id}/images`, req, res));
 
-app.get("/api/:service/health", async (req, res) => {
-  const { service } = req.params;
-  if (!services[service]) return res.status(404).json({ error: "Service not found" });
-  return proxyCall(service, "/health", req, res);
-});
+// Standard duplicates / api/ prefixed routes
+app.get("/api/projects", (req, res) => proxyCall("project", "/projects", req, res));
+app.post("/api/projects", (req, res) => proxyCall("project", "/projects", req, res));
+app.get("/api/projects/:id", (req, res) => proxyCall("project", `/projects/${req.params.id}`, req, res));
+app.get("/api/projects/:id/images", (req, res) => proxyCall("project", `/projects/${req.params.id}/images`, req, res));
 
-app.post("/images/jobs", async (req, res) => proxyCall("image", "/images/jobs", req, res));
-app.get("/projects", async (req, res) => proxyCall("project", "/projects", req, res));
-app.post("/projects", async (req, res) => proxyCall("project", "/projects", req, res));
+// Image Jobs
+app.post("/images/jobs", (req, res) => proxyCall("image", "/images/jobs", req, res));
+app.post("/api/images/jobs", (req, res) => proxyCall("image", "/images/jobs", req, res));
 
+// Error Simulation
 app.get("/observability/simulate-error", async (req, res) => {
   if (process.env.NODE_ENV === "production") {
     return res.status(404).json({ error: "Not Found", requestId: req.correlationId });
   }
-
   return proxyCall("project", "/observability/simulate-error", req, res);
 });
-
-app.get("/projects", async (req, res) => proxyJsonRequest("project", "/projects", req, res));
-app.get("/projects/:id", async (req, res) => proxyJsonRequest("project", `/projects/${req.params.id}`, req, res));
-app.post("/projects", async (req, res) => proxyJsonRequest("project", "/projects", req, res));
-app.post("/projects/commands", async (req, res) => proxyJsonRequest("project", "/projects/commands", req, res));
-
-app.get("/api/projects", async (req, res) => proxyJsonRequest("project", "/projects", req, res));
-app.get("/api/projects/:id", async (req, res) => proxyJsonRequest("project", `/projects/${req.params.id}`, req, res));
-app.post("/api/projects", async (req, res) => proxyJsonRequest("project", "/projects", req, res));
-app.post("/api/projects/commands", async (req, res) => proxyJsonRequest("project", "/projects/commands", req, res));
 
 app.listen(port, () => {
   logger.info(`api-gateway listening on ${port}`);

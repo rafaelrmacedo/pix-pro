@@ -31,6 +31,7 @@ services:
       - IMAGE_SERVICE_URL=http://image-processing-service:4002
       - PROJECT_SERVICE_URL=http://project-service:4003
       - NOTIFICATION_SERVICE_URL=http://notification-service:4004
+      - JWT_SECRET=${JWT_SECRET}
     depends_on:
       - auth-service
       - image-processing-service
@@ -65,6 +66,7 @@ services:
       - DB_PASSWORD=pixpro
       - DB_NAME=pixpro
       - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET}
     depends_on:
       postgres:
         condition: service_healthy
@@ -134,6 +136,7 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=${REDIS_URL}
       - RABBITMQ_URL=${RABBITMQ_URL}
+      - JWT_SECRET=${JWT_SECRET}
     depends_on:
       postgres:
         condition: service_healthy
@@ -167,6 +170,7 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - RABBITMQ_URL=${RABBITMQ_URL}
       - REDIS_URL=${REDIS_URL}
+      - JWT_SECRET=${JWT_SECRET}
     depends_on:
       rabbitmq:
         condition: service_started
@@ -175,7 +179,7 @@ services:
     networks:
       - pixpro-net
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:4004/health || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider --no-check-certificate https://localhost:4004/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3

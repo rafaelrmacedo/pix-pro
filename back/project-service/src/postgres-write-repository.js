@@ -1,6 +1,7 @@
-const { Pool } = require("pg");
+import pg from "pg";
+const { Pool } = pg;
 
-function createProjectWriteRepository({ connectionString }) {
+export function createProjectWriteRepository({ connectionString }) {
   const pool = new Pool({ connectionString });
 
   async function init() {
@@ -8,6 +9,7 @@ function createProjectWriteRepository({ connectionString }) {
       CREATE TABLE IF NOT EXISTS projects_write (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
+        user_id TEXT NOT NULL,
         created_at TIMESTAMPTZ NOT NULL
       )
     `);
@@ -16,22 +18,26 @@ function createProjectWriteRepository({ connectionString }) {
   async function createProject(project) {
     const result = await pool.query(
       `
-        INSERT INTO projects_write (id, name, created_at)
-        VALUES ($1, $2, $3)
-        RETURNING id, name, created_at
+        INSERT INTO projects_write (id, name, user_id, created_at)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id, name, user_id, created_at
       `,
-      [project.id, project.name, project.createdAt]
+      [project.id, project.name, project.userId, project.createdAt]
     );
 
     return mapProjectRow(result.rows[0]);
   }
 
-  async function listProjects() {
-    const result = await pool.query(`
-      SELECT id, name, created_at
-      FROM projects_write
-      ORDER BY created_at DESC
-    `);
+  async function listProjects(userId) {
+    const result = await pool.query(
+      `
+        SELECT id, name, user_id, created_at
+        FROM projects_write
+        WHERE user_id = $1
+        ORDER BY created_at DESC
+      `,
+      [userId]
+    );
 
     return result.rows.map(mapProjectRow);
   }
@@ -52,10 +58,11 @@ function mapProjectRow(row) {
   return {
     id: row.id,
     name: row.name,
+    userId: row.user_id,
     createdAt: row.created_at instanceof Date
       ? row.created_at.toISOString()
       : new Date(row.created_at).toISOString()
   };
 }
 
-module.exports = { createProjectWriteRepository };
+export default { createProjectWriteRepository };
