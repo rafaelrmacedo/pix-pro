@@ -1,9 +1,7 @@
-const EVENT_TYPES = {
-  IMAGE_PROCESSING_REQUESTED: "image.processing.requested",
-  IMAGE_PROCESSING_COMPLETED: "image.processing.completed",
-  IMAGE_PROCESSING_FAILED: "image.processing.failed",
+export const EVENT_TYPES = {
+  PROJECT_CREATED: "project.created",
+  IMAGE_UPLOADED: "image.uploaded",
+  IMAGE_PROCESSED: "image.processed",
+  PROCESSING_ERROR: "image.error",
   NOTIFICATION_STATUS_UPDATED: "notification.status.updated"
 };
-
-module.exports = { EVENT_TYPES };
-

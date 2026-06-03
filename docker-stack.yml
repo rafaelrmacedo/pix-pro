@@ -98,9 +98,11 @@ services:
       - PORT=4003
       - DATABASE_URL=postgresql://pixpro:pixpro@postgres:5432/pixpro
       - REDIS_URL=redis://redis:6379
+      - RABBITMQ_URL=amqp://rabbitmq:5672
     depends_on:
       - postgres
       - redis
+      - rabbitmq
     networks:
       - pixpro-net
     deploy:
