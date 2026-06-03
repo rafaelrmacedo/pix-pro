@@ -116,6 +116,13 @@ app.post("/images/jobs", upload.single("image"), async (req, res) => {
       command
     );
 
+    // Invalidate project images cache since a new upload was accepted
+    if (redis) {
+      const cacheKey = `projects:${projectId}:images`;
+      await redis.del(cacheKey);
+      logger.info(`Invalidated project images cache on upload: ${cacheKey}`, { correlationId: cid });
+    }
+
     res.status(202).json({
       message: "Image uploaded and processing command queued",
       imageId,
@@ -163,6 +170,13 @@ async function startConsumer() {
           "INSERT INTO images (id, project_id, original_url, status, created_at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE SET status = 'processing'",
           [imageId, content.projectId, content.originalUrl, "processing", new Date().toISOString()]
         );
+
+        // Invalidate project images cache when database record is updated to processing
+        if (redis) {
+          const cacheKey = `projects:${content.projectId}:images`;
+          await redis.del(cacheKey);
+          logger.info(`Invalidated project images cache on processing start: ${cacheKey}`, { correlationId });
+        }
 
         // processing simulation (IA logic would go here)
         setTimeout(async () => {

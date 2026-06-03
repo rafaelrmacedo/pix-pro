@@ -91,22 +91,28 @@ function App() {
         const type = envelope.type || "info";
         const payload = envelope.payload || {};
 
+        // Normalize payload to handle both notification-service envelope and direct mock payloads
+        const eventPayload = payload.payload || payload;
+        const imageId = eventPayload.imageId;
+        const projectId = eventPayload.projectId;
+
         // Dispatch notifications to toast alerts
         if (type === "notification.connected") {
           addToast("info", envelope.message || "Connected to notification pipeline.");
         } else if (type === "project.created") {
-          addToast("project.created", `New project "${payload.name}" was successfully created!`);
+          const projectName = eventPayload.name || "New Project";
+          addToast("project.created", `New project "${projectName}" was successfully created!`);
           // Trigger reload of project list
           setRefreshTrigger((prev) => prev + 1);
         } else if (type === "image.process.requested") {
-          addToast("image.process.requested", `Image processing job requested for ID: ${payload.imageId}`);
-          if (activeProjectIdRef.current === payload.projectId) {
+          addToast("image.process.requested", `Image processing job requested for ID: ${imageId}`);
+          if (activeProjectIdRef.current === projectId) {
             setRefreshTrigger((prev) => prev + 1);
           }
         } else if (type === "image.processed") {
-          addToast("image.processed", `AI image processing completed for ID: ${payload.imageId}`);
+          addToast("image.processed", `AI image processing completed for ID: ${imageId}`);
           // If the processed image is for the currently open project, hot reload the image grid
-          if (activeProjectIdRef.current === payload.projectId) {
+          if (activeProjectIdRef.current === projectId) {
             setRefreshTrigger((prev) => prev + 1);
           }
         }

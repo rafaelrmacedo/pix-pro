@@ -30,6 +30,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [showModal, setShowModal] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [pendingImageId, setPendingImageId] = useState<string | null>(null);
 
   // Health monitoring
   const [gatewayStatus, setGatewayStatus] = useState<"checking" | "online" | "offline">("checking");
@@ -98,6 +99,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
   }, [refreshTrigger]);
 
+  // Monitor pending image status and release loading state once finished processing
+  useEffect(() => {
+    if (pendingImageId && images.length > 0) {
+      const pendingImg = images.find(img => img.id === pendingImageId);
+      if (!pendingImg || pendingImg.status === 'completed' || pendingImg.status === 'failed') {
+        setUploading(false);
+        setPendingImageId(null);
+      }
+    }
+  }, [images, pendingImageId]);
+
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProjectName.trim()) return;
@@ -125,13 +137,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
     setUploadError(null);
 
     try {
-      await api.uploadImage(activeProject.id, files[0]);
+      const res = await api.uploadImage(activeProject.id, files[0]);
+      setPendingImageId(res.imageId);
+      // Fallback timeout to unlock UI if processing takes too long or WS fails
+      setTimeout(() => {
+        setUploading(false);
+        setPendingImageId(null);
+      }, 15000);
+      
       // Immediately refresh list (will show 'processing' status)
       await loadImages(activeProject.id);
     } catch (err: any) {
       setUploadError(err.message || "Failed to upload image");
-    } finally {
       setUploading(false);
+    } finally {
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
@@ -154,11 +173,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
       setUploading(true);
       setUploadError(null);
       try {
-        await api.uploadImage(activeProject.id, files[0]);
+        const res = await api.uploadImage(activeProject.id, files[0]);
+        setPendingImageId(res.imageId);
+        // Fallback timeout to unlock UI if processing takes too long or WS fails
+        setTimeout(() => {
+          setUploading(false);
+          setPendingImageId(null);
+        }, 15000);
+        
         await loadImages(activeProject.id);
       } catch (err: any) {
         setUploadError(err.message || "Failed to upload image");
-      } finally {
         setUploading(false);
       }
     }
@@ -327,7 +352,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               {uploading ? (
                 <div className="upload-progress">
                   <span className="spinner-large"></span>
-                  <p>Uploading to secure Cloudflare R2 storage...</p>
+                  <p>{pendingImageId ? "AI image processing in progress..." : "Uploading to secure Cloudflare R2 storage..."}</p>
                 </div>
               ) : (
                 <div className="upload-prompt">

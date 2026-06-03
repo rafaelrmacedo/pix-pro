@@ -323,6 +323,28 @@ async function bootstrap() {
 
       CREATE INDEX IF NOT EXISTS idx_images_project_id ON images(project_id);
     `);
+
+    // Migrate old foreign key referencing public.projects if it exists
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 
+          FROM information_schema.table_constraints 
+          WHERE constraint_name = 'images_project_id_fkey' AND table_name = 'images'
+        ) THEN
+          IF EXISTS (
+            SELECT 1 
+            FROM information_schema.constraint_column_usage ccu
+            JOIN information_schema.table_constraints tc ON ccu.constraint_name = tc.constraint_name
+            WHERE tc.constraint_name = 'images_project_id_fkey' AND ccu.table_name = 'projects'
+          ) THEN
+            ALTER TABLE images DROP CONSTRAINT images_project_id_fkey;
+            ALTER TABLE images ADD CONSTRAINT images_project_id_fkey FOREIGN KEY (project_id) REFERENCES projects_write(id);
+          END IF;
+        END IF;
+      END $$;
+    `);
     logger.info("Shared read model images table and index initialized");
 
     // 2. Initialize read model (Redis)
