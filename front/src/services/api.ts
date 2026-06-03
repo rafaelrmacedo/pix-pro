@@ -177,7 +177,17 @@ class ApiClient {
     return data.images || [];
   }
 
-  async uploadImage(projectId: string, file: File): Promise<{ imageId: string; originalUrl: string }> {
+  async uploadImage(
+    projectId: string,
+    file: File,
+    metadata?: {
+      prompt?: string;
+      negativePrompt?: string;
+      steps?: number;
+      guidanceScale?: number;
+      strength?: number;
+    }
+  ): Promise<{ imageId: string; originalUrl: string }> {
     if (this.isMock()) {
       const imageId = `img-mock-${Date.now()}`;
       
@@ -208,6 +218,13 @@ class ApiClient {
     const formData = new FormData();
     formData.append("projectId", projectId);
     formData.append("image", file);
+    if (metadata) {
+      if (metadata.prompt) formData.append("prompt", metadata.prompt);
+      if (metadata.negativePrompt) formData.append("negativePrompt", metadata.negativePrompt);
+      if (metadata.steps !== undefined) formData.append("steps", String(metadata.steps));
+      if (metadata.guidanceScale !== undefined) formData.append("guidanceScale", String(metadata.guidanceScale));
+      if (metadata.strength !== undefined) formData.append("strength", String(metadata.strength));
+    }
 
     const res = await fetch(`${GATEWAY_URL}/api/images/jobs`, {
       method: "POST",

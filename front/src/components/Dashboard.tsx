@@ -32,6 +32,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [pendingImageId, setPendingImageId] = useState<string | null>(null);
 
+  // AI Parameters State
+  const [prompt, setPrompt] = useState("");
+  const [negativePrompt, setNegativePrompt] = useState("low quality, blurry, deformed, photorealistic, 3d render");
+  const [steps, setSteps] = useState(30);
+  const [guidanceScale, setGuidanceScale] = useState(7.0);
+  const [strength, setStrength] = useState(0.6);
+
   // Health monitoring
   const [gatewayStatus, setGatewayStatus] = useState<"checking" | "online" | "offline">("checking");
   const [serviceBreakers, setServiceBreakers] = useState<Record<string, string>>({});
@@ -133,11 +140,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const files = e.target.files;
     if (!files || files.length === 0 || !activeProject) return;
 
+    if (!prompt.trim()) {
+      setUploadError("AI Prompt is required. Please fill in the prompt before uploading.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
     setUploading(true);
     setUploadError(null);
 
     try {
-      const res = await api.uploadImage(activeProject.id, files[0]);
+      const res = await api.uploadImage(activeProject.id, files[0], {
+        prompt,
+        negativePrompt,
+        steps,
+        guidanceScale,
+        strength
+      });
       setPendingImageId(res.imageId);
       // Fallback timeout to unlock UI if processing takes too long or WS fails
       setTimeout(() => {
@@ -168,12 +187,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
     e.preventDefault();
     if (!activeProject || uploading) return;
 
+    if (!prompt.trim()) {
+      setUploadError("AI Prompt is required. Please fill in the prompt before uploading.");
+      return;
+    }
+
     const files = e.dataTransfer.files;
     if (files && files.length > 0) {
       setUploading(true);
       setUploadError(null);
       try {
-        const res = await api.uploadImage(activeProject.id, files[0]);
+        const res = await api.uploadImage(activeProject.id, files[0], {
+          prompt,
+          negativePrompt,
+          steps,
+          guidanceScale,
+          strength
+        });
         setPendingImageId(res.imageId);
         // Fallback timeout to unlock UI if processing takes too long or WS fails
         setTimeout(() => {
@@ -330,6 +360,91 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <div className="project-title-area">
                 <h3>{activeProject.name}</h3>
                 <span className="project-details-subtitle">Pipeline ID: <code>{activeProject.id}</code></span>
+              </div>
+            </div>
+
+            {/* AI Generation Parameters Panel */}
+            <div className="ai-params-panel glass animate-fade-in">
+              <div className="ai-params-header">
+                <div className="ai-params-title">
+                  <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                  </svg>
+                  <span>CU04 - AI Generation Parameters (JuggernautXL)</span>
+                </div>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Configure prompt first, then upload reference image below</span>
+              </div>
+
+              <div className="ai-params-grid">
+                <div className="ai-params-col-main">
+                  <div className="input-field-wrapper">
+                    <label htmlFor="ai-prompt">Prompt (Obrigatório)</label>
+                    <textarea
+                      id="ai-prompt"
+                      rows={3}
+                      placeholder="e.g., A cyberpunk warrior character, dynamic pose, neon light glowing, highly detailed concept art, 8k resolution..."
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="input-field-wrapper">
+                    <label htmlFor="ai-negative-prompt">Negative Prompt (Opcional)</label>
+                    <textarea
+                      id="ai-negative-prompt"
+                      rows={2}
+                      placeholder="low quality, blurry, deformed, photorealistic, 3d render..."
+                      value={negativePrompt}
+                      onChange={(e) => setNegativePrompt(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="ai-params-col-side">
+                  <div className="input-field-wrapper">
+                    <label htmlFor="ai-steps">Steps: <span className="slider-val">{steps}</span></label>
+                    <div className="input-row-slider">
+                      <input
+                        id="ai-steps"
+                        type="range"
+                        min="1"
+                        max="50"
+                        value={steps}
+                        onChange={(e) => setSteps(Number(e.target.value))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="input-field-wrapper">
+                    <label htmlFor="ai-guidance">Guidance Scale: <span className="slider-val">{guidanceScale.toFixed(1)}</span></label>
+                    <div className="input-row-slider">
+                      <input
+                        id="ai-guidance"
+                        type="range"
+                        min="1"
+                        max="20"
+                        step="0.5"
+                        value={guidanceScale}
+                        onChange={(e) => setGuidanceScale(Number(e.target.value))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="input-field-wrapper">
+                    <label htmlFor="ai-strength">Denoising Strength: <span className="slider-val">{strength.toFixed(2)}</span></label>
+                    <div className="input-row-slider">
+                      <input
+                        id="ai-strength"
+                        type="range"
+                        min="0.1"
+                        max="1"
+                        step="0.05"
+                        value={strength}
+                        onChange={(e) => setStrength(Number(e.target.value))}
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 

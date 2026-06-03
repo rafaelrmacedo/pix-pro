@@ -43,7 +43,7 @@ async function isAlreadyProcessed(imageId) {
   if (!redis) return false;
   const key = `processed_image:${imageId}`;
   const exists = await redis.get(key);
-  if (exists === "completed") return true;
+  if (exists === "completed" || exists === "processing") return true;
   await redis.set(key, "processing", { EX: 3600 });
   return false;
 }
@@ -63,7 +63,7 @@ app.get("/health", (_req, res) => {
  * Endpoint para receber imagens reais via multipart/form-data
  */
 app.post("/images/jobs", upload.single("image"), async (req, res) => {
-  const { projectId } = req.body || {};
+  const { projectId, prompt, negativePrompt, steps, guidanceScale, strength } = req.body || {};
   const cid = req.headers["x-correlation-id"];
   const userId = req.headers["x-user-id"] || "system";
 
@@ -95,7 +95,12 @@ app.post("/images/jobs", upload.single("image"), async (req, res) => {
       projectId,
       originalUrl,
       userId,
-      requestedAt: new Date().toISOString()
+      requestedAt: new Date().toISOString(),
+      prompt,
+      negativePrompt,
+      steps: steps ? parseInt(steps, 10) : undefined,
+      guidanceScale: guidanceScale ? parseFloat(guidanceScale) : undefined,
+      strength: strength ? parseFloat(strength) : undefined
     });
 
     const eventData = {
@@ -178,47 +183,129 @@ async function startConsumer() {
           logger.info(`Invalidated project images cache on processing start: ${cacheKey}`, { correlationId });
         }
 
-        // processing simulation (IA logic would go here)
-        setTimeout(async () => {
-          try {
-            // Simulation: Just a small buffer as result
-            const mockProcessedBuffer = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QAwADCAICyt9uGAAAAABJRU5ErkJggg==", "base64");
-            const fileName = `processed-${imageId}.png`;
-
-            logger.info(`Uploading processed result to CDN: ${fileName}`, { correlationId });
-            const cdnUrl = await uploadToCDN(mockProcessedBuffer, fileName, "image/png");
-
-            const processedData = {
-              imageId,
-              projectId: content.projectId,
-              processedUrl: cdnUrl,
-              userId: content.userId || "system",
-              metadata: { aiResult: "Processing successful", storage: isCDNConfigured ? "R2" : "mock" },
-              processedAt: new Date().toISOString()
-            };
-
-            await pool.query(
-              "UPDATE images SET status = $1, cdn_url = $2 WHERE id = $3",
-              ["completed", cdnUrl, imageId]
-            );
-
-            if (redis) {
-              const key = `processed_image:${imageId}`;
-              await redis.set(key, "completed", { EX: 86400 });
-              await redis.del(`projects:${content.projectId}:images`);
-            }
-
-            await eventBus.publish(EVENT_TYPES.IMAGE_PROCESSED, processedData, correlationId);
-            mq.channel.ack(msg);
-            logger.info(`Image processing finished: ${imageId}`, { correlationId, cdnUrl });
-          } catch (err) {
-            console.error(`!!! UPLOAD ERROR for ${imageId}:`, err);
-            mq.channel.nack(msg, false, false);
+        // 1. Download original image from CDN
+        let originalBuffer;
+        if (content.originalUrl.includes("pub-mock.r2.dev")) {
+          logger.warn(`Mock URL detected in consumer: ${content.originalUrl}. Using 1x1 png placeholder.`, { correlationId });
+          originalBuffer = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QAwADCAICyt9uGAAAAABJRU5ErkJggg==", "base64");
+        } else {
+          logger.info(`Downloading original image: ${content.originalUrl}`, { correlationId });
+          const downloadResponse = await fetch(content.originalUrl);
+          if (!downloadResponse.ok) {
+            throw new Error(`Failed to download original image from CDN (status: ${downloadResponse.status})`);
           }
-        }, 2000);
+          const arrayBuffer = await downloadResponse.arrayBuffer();
+          originalBuffer = Buffer.from(arrayBuffer);
+        }
+
+        // 2. Prepare Juggernaut XL payload
+        const juggernautUrl = process.env.JUGGERNAUT_API_URL;
+        if (!juggernautUrl) {
+          throw new Error("JUGGERNAUT_API_URL environment variable is not defined");
+        }
+
+        const payload = {
+          prompt: content.prompt || "highly detailed image",
+          negative_prompt: content.negativePrompt || "low quality, blurry, deformed, photorealistic, 3d render",
+          width: 768,
+          height: 768,
+          num_inference_steps: content.steps || 30,
+          guidance_scale: content.guidanceScale || 7.0,
+          num_images_per_prompt: 1,
+          strength: content.strength !== undefined ? content.strength : 0.6,
+          image: originalBuffer.toString("base64")
+        };
+
+        // 3. Request generation from Juggernaut XL model
+        logger.info(`Sending generation request to Juggernaut XL at: ${juggernautUrl}/img2img`, { correlationId });
+        const juggernautResponse = await fetch(`${juggernautUrl}/img2img`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!juggernautResponse.ok) {
+          throw new Error(`Juggernaut XL API returned status: ${juggernautResponse.status}`);
+        }
+
+        const responseJson = await juggernautResponse.json();
+        
+        // Debug log
+        logger.info(`Received response from Juggernaut API: ${JSON.stringify(Object.keys(responseJson))}`);
+        if (responseJson.detail) {
+           logger.error(`API Error Detail: ${JSON.stringify(responseJson.detail)}`);
+        }
+
+        if (!responseJson.image && !responseJson.images) {
+          logger.error(`Unexpected response payload: ${JSON.stringify(responseJson).substring(0, 500)}`);
+          throw new Error("Invalid response format from Juggernaut XL API (missing image field)");
+        }
+
+        const base64Result = responseJson.image || responseJson.images[0];
+        const processedBuffer = Buffer.from(base64Result, "base64");
+        const fileName = `processed-${imageId}.png`;
+
+        // 4. Upload processed result to CDN
+        logger.info(`Uploading processed result to CDN: ${fileName}`, { correlationId });
+        const cdnUrl = await uploadToCDN(processedBuffer, fileName, "image/png");
+
+        const processedData = {
+          imageId,
+          projectId: content.projectId,
+          processedUrl: cdnUrl,
+          userId: content.userId || "system",
+          metadata: { aiResult: "JuggernautXL AI generation successful", storage: isCDNConfigured ? "R2" : "mock" },
+          processedAt: new Date().toISOString()
+        };
+
+        // 5. Update Database status to completed
+        await pool.query(
+          "UPDATE images SET status = $1, cdn_url = $2 WHERE id = $3",
+          ["completed", cdnUrl, imageId]
+        );
+
+        if (redis) {
+          const key = `processed_image:${imageId}`;
+          await redis.set(key, "completed", { EX: 86400 });
+          await redis.del(`projects:${content.projectId}:images`);
+        }
+
+        // 6. Publish Event and Ack message
+        await eventBus.publish(EVENT_TYPES.IMAGE_PROCESSED, processedData, correlationId);
+        mq.channel.ack(msg);
+        logger.info(`Image processing finished successfully: ${imageId}`, { correlationId, cdnUrl });
 
       } catch (err) {
-        logger.error(`Error processing message for ${imageId}`, err, { correlationId });
+        logger.error(`Error processing image ${imageId}`, err, { correlationId });
+
+        // Update database to failed
+        try {
+          await pool.query(
+            "UPDATE images SET status = 'failed' WHERE id = $1",
+            [imageId]
+          );
+          if (redis) {
+            await redis.del(`projects:${content.projectId}:images`);
+          }
+        } catch (dbErr) {
+          logger.error(`Failed to update image status to failed in database for ${imageId}`, dbErr, { correlationId });
+        }
+
+        // Publish image error event
+        try {
+          const errorData = {
+            imageId,
+            projectId: content.projectId,
+            userId: content.userId || "system",
+            error: err.message,
+            failedAt: new Date().toISOString()
+          };
+          await eventBus.publish(EVENT_TYPES.PROCESSING_ERROR, errorData, correlationId);
+        } catch (eventErr) {
+          logger.error(`Failed to publish image error event for ${imageId}`, eventErr, { correlationId });
+        }
+
+        // Nack the message so it goes to the DLQ
         mq.channel.nack(msg, false, false);
       }
     });

@@ -115,6 +115,11 @@ function App() {
           if (activeProjectIdRef.current === projectId) {
             setRefreshTrigger((prev) => prev + 1);
           }
+        } else if (type === "image.error") {
+          addToast("error", `AI image processing failed for ID: ${payload.imageId}: ${payload.error || "Unknown error"}`);
+          if (activeProjectIdRef.current === payload.projectId) {
+            setRefreshTrigger((prev) => prev + 1);
+          }
         }
       } catch (err) {
         console.error("[WS] Failed to parse message payload:", err);
