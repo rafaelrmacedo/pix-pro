@@ -117,6 +117,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
   }, [images, pendingImageId]);
 
+  // Handlers
+  const handleDeleteImage = async (imageId: string) => {
+    if (!activeProject) return;
+    if (!window.confirm("Are you sure you want to delete this image?")) return;
+    
+    try {
+      await api.deleteImage(activeProject.id, imageId);
+      // Remove from local state immediately for snappy UI
+      setImages(prev => prev.filter(img => img.id !== imageId));
+    } catch (err: any) {
+      setUploadError(err.message || "Failed to delete image");
+    }
+  };
+
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProjectName.trim()) return;
@@ -502,10 +516,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
                     <div key={image.id} className="image-card-container glass">
                       <div className="image-card-header">
                         <span className="image-id">ID: {image.id}</span>
-                        <span className={`status-badge ${image.status}`}>
-                          {image.status === "processing" && <span className="spinner-tiny"></span>}
-                          {image.status}
-                        </span>
+                        <div className="image-card-actions">
+                          <span className={`status-badge ${image.status}`}>
+                            {image.status === "processing" && <span className="spinner-tiny"></span>}
+                            {image.status}
+                          </span>
+                          <button 
+                            className="btn-icon delete-btn" 
+                            title="Delete image" 
+                            onClick={() => handleDeleteImage(image.id)}
+                          >
+                            &times;
+                          </button>
+                        </div>
                       </div>
 
                       {/* Display original vs processed */}

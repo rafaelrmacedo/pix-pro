@@ -240,6 +240,28 @@ class ApiClient {
     return res.json();
   }
 
+  async deleteImage(projectId: string, imageId: string): Promise<void> {
+    if (this.isMock()) {
+      const stored = localStorage.getItem("pixpro_mock_images");
+      if (stored) {
+        let images: Image[] = JSON.parse(stored);
+        images = images.filter(img => img.id !== imageId);
+        localStorage.setItem("pixpro_mock_images", JSON.stringify(images));
+      }
+      return;
+    }
+
+    const res = await fetch(`${GATEWAY_URL}/api/projects/${projectId}/images/${imageId}`, {
+      method: "DELETE",
+      headers: this.getHeaders()
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || "Failed to delete image");
+    }
+  }
+
   private simulateProcessing(projectId: string, imageId: string) {
     // 1. After 800ms, change to "processing" and send custom mock event
     setTimeout(() => {

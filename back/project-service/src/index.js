@@ -247,6 +247,33 @@ app.get("/projects/:id/images", async (req, res) => {
 });
 
 /**
+ * Delete an image
+ */
+app.delete("/projects/:id/images/:imageId", async (req, res) => {
+  const { id, imageId } = req.params;
+  const cid = req.correlationId;
+  const userId = req.headers["x-user-id"] || "system";
+
+  try {
+    const dbProject = await pool.query(
+      "SELECT user_id as \"userId\" FROM projects_write WHERE id = $1",
+      [id]
+    );
+    if (dbProject.rows.length === 0) return res.status(404).json({ error: "Project not found", requestId: cid });
+    if (dbProject.rows[0].userId !== userId) return res.status(403).json({ error: "Forbidden", requestId: cid });
+
+    await pool.query("DELETE FROM images WHERE id = $1 AND project_id = $2", [imageId, id]);
+
+    if (redis) await redis.del(`projects:${id}:images`);
+
+    res.json({ success: true });
+  } catch (err) {
+    logger.error(`Failed to delete image ${imageId}`, err, { correlationId: cid });
+    res.status(500).json({ error: "Internal Server Error", requestId: cid });
+  }
+});
+
+/**
  * Create a new project (via CQRS command handler)
  */
 app.post("/projects", async (req, res) => {

@@ -169,12 +169,14 @@ app.get("/projects", (req, res) => proxyCall("project", "/projects", req, res));
 app.post("/projects", (req, res) => proxyCall("project", "/projects", req, res));
 app.get("/projects/:id", (req, res) => proxyCall("project", `/projects/${req.params.id}`, req, res));
 app.get("/projects/:id/images", (req, res) => proxyCall("project", `/projects/${req.params.id}/images`, req, res));
+app.delete("/projects/:id/images/:imageId", (req, res) => proxyCall("project", `/projects/${req.params.id}/images/${req.params.imageId}`, req, res));
 
 // Standard duplicates / api/ prefixed routes
 app.get("/api/projects", (req, res) => proxyCall("project", "/projects", req, res));
 app.post("/api/projects", (req, res) => proxyCall("project", "/projects", req, res));
 app.get("/api/projects/:id", (req, res) => proxyCall("project", `/projects/${req.params.id}`, req, res));
 app.get("/api/projects/:id/images", (req, res) => proxyCall("project", `/projects/${req.params.id}/images`, req, res));
+app.delete("/api/projects/:id/images/:imageId", (req, res) => proxyCall("project", `/projects/${req.params.id}/images/${req.params.imageId}`, req, res));
 
 // Image Jobs
 app.post("/images/jobs", (req, res) => proxyCall("image", "/images/jobs", req, res));
