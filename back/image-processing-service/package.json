@@ -2,14 +2,20 @@
   "name": "pixpro-image-processing-service",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1045.0",
+    "@aws-sdk/lib-storage": "^3.1045.0",
+    "amqplib": "^1.0.3",
     "cors": "^2.8.5",
-    "express": "^4.21.1"
+    "express": "^4.21.1",
+    "multer": "^2.1.1",
+    "pg": "^8.20.0",
+    "redis": "^4.7.0"
   }
 }
-

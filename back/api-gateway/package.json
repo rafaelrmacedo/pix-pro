@@ -2,6 +2,7 @@
   "name": "pixpro-api-gateway",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
@@ -9,7 +10,7 @@
   },
   "dependencies": {
     "cors": "^2.8.5",
-    "express": "^4.21.1"
+    "express": "^4.21.1",
+    "opossum": "9.0.0"
   }
 }
-

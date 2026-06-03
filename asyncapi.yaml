@@ -1,0 +1,76 @@
+asyncapi: 3.1.0
+info:
+  title: PixPro WebSocket Hubs
+  version: 1.0.0
+  description: WebSocket hubs for real-time notifications and updates in PixPro.
+
+servers:
+  production:
+    host: api.pixpro.local/hub
+    protocol: ws
+    description: Production WebSocket Hub Server
+    security:
+      - $ref: '#/components/securitySchemes/jwt'
+
+channels:
+  notifications:
+    address: notifications
+    description: Channel for real-time user notifications.
+    messages:
+      NotificationMessage:
+        $ref: '#/components/messages/NotificationMessage'
+
+  project_updates:
+    address: project_updates
+    description: Channel for real-time updates on project processing status.
+    messages:
+      NotificationMessage:
+        $ref: '#/components/messages/NotificationMessage'
+
+operations:
+  receiveNotification:
+    action: receive
+    channel:
+      $ref: '#/channels/notifications'
+  
+  receiveProjectUpdate:
+    action: receive
+    channel:
+      $ref: '#/channels/project_updates'
+
+components:
+  messages:
+    NotificationMessage:
+      name: Notification
+      title: Notification Message
+      summary: A message containing notification details.
+      contentType: application/json
+      payload:
+        type: object
+        properties:
+          id:
+            type: string
+            format: uuid
+            description: Unique identifier of the notification.
+          type:
+            type: string
+            description: The type of notification (e.g., 'PROJECT_COMPLETED', 'NEW_MESSAGE').
+          content:
+            type: string
+            description: The actual text content or payload of the notification.
+          timestamp:
+            type: string
+            format: date-time
+            description: The time the notification was sent.
+        required:
+          - id
+          - type
+          - content
+          - timestamp
+
+  securitySchemes:
+    jwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Use a JWT token for authentication.
