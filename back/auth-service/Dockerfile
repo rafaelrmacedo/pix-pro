@@ -8,7 +8,7 @@ COPY auth-service/package*.json ./auth-service/
 COPY shared ./shared
 
 # Install all dependencies (including devDependencies) to enable build
-RUN npm install
+RUN npm install && cd auth-service && npm install
 
 # Copy auth-service source code
 COPY auth-service ./auth-service

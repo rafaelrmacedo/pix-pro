@@ -62,7 +62,9 @@ function App() {
   // Secure WebSocket client connection
   const connectWebSocket = (authToken: string) => {
     if (socketRef.current) {
-      socketRef.current.close();
+      const oldSocket = socketRef.current;
+      socketRef.current = null;
+      oldSocket.close();
     }
 
     if (reconnectTimeoutRef.current) {
@@ -122,6 +124,11 @@ function App() {
 
     socket.onclose = (event) => {
       console.log(`[WS] Connection closed (code: ${event.code})`);
+      
+      if (socketRef.current !== socket) {
+        return; // Prevent reconnect loops from stale/cleaned-up sockets
+      }
+
       setWsConnected(false);
 
       // Reconnect if not manually logged out
@@ -153,7 +160,9 @@ function App() {
 
     return () => {
       if (socketRef.current) {
-        socketRef.current.close();
+        const oldSocket = socketRef.current;
+        socketRef.current = null;
+        oldSocket.close();
       }
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);

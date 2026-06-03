@@ -30,7 +30,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [showModal, setShowModal] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  
+
   // Health monitoring
   const [gatewayStatus, setGatewayStatus] = useState<"checking" | "online" | "offline">("checking");
   const [serviceBreakers, setServiceBreakers] = useState<Record<string, string>>({});
@@ -301,7 +301,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </svg>
                 Back to Projects
               </button>
-              
+
               <div className="project-title-area">
                 <h3>{activeProject.name}</h3>
                 <span className="project-details-subtitle">Pipeline ID: <code>{activeProject.id}</code></span>
@@ -309,21 +309,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
 
             {/* Upload Area */}
-            <div 
+            <div
               className={`upload-zone glass ${uploading ? "uploading" : ""}`}
               onDragOver={handleDragOver}
               onDrop={handleDrop}
               onClick={triggerFileSelector}
             >
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                style={{ display: "none" }} 
-                onChange={handleFileUpload} 
+              <input
+                type="file"
+                ref={fileInputRef}
+                style={{ display: "none" }}
+                onChange={handleFileUpload}
                 accept="image/*"
                 disabled={uploading}
               />
-              
+
               {uploading ? (
                 <div className="upload-progress">
                   <span className="spinner-large"></span>
@@ -374,7 +374,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           <span className="pane-tag">Original</span>
                           <img src={image.original_url} alt="Original uploaded image" className="pipeline-img" />
                         </div>
-                        
+
                         <div className="comparison-pane border-left">
                           <span className="pane-tag">Processed (AI Result)</span>
                           {image.status === "completed" && image.cdn_url ? (

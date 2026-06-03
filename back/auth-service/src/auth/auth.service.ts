@@ -30,7 +30,7 @@ export class AuthService {
     };
 
     return {
-      accessToken: this.jwtService.sign(payload),
+      access_token: this.jwtService.sign(payload),
     };
   }
 }
