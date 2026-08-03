@@ -1,0 +1,258 @@
+services:
+  front:
+    build:
+      context: ./front
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./front:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_GATEWAY_URL=http://localhost:4000
+    depends_on:
+      - api-gateway
+    networks:
+      - pixpro-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      update_config:
+        parallelism: 1
+        delay: 5s
+
+  api-gateway:
+    build:
+      context: ./back
+      dockerfile: api-gateway/Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - AUTH_SERVICE_URL=http://auth-service:4001
+      - IMAGE_SERVICE_URL=http://image-processing-service:4002
+      - PROJECT_SERVICE_URL=http://project-service:4003
+      - NOTIFICATION_SERVICE_URL=http://notification-service:4004
+      - JWT_SECRET=${JWT_SECRET:-super-secret-key}
+    depends_on:
+      - auth-service
+      - image-processing-service
+      - project-service
+      - notification-service
+    networks:
+      - pixpro-net
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:4000/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      update_config:
+        parallelism: 1
+        delay: 5s
+
+  auth-service:
+    build:
+      context: ./back
+      dockerfile: auth-service/Dockerfile
+    ports:
+      - "4001:4001"
+    environment:
+      - PORT=4001
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=pixpro
+      - DB_PASSWORD=pixpro
+      - DB_NAME=pixpro
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET:-super-secret-key}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - pixpro-net
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:4001/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      update_config:
+        parallelism: 1
+        delay: 5s
+
+  image-processing-service:
+    build:
+      context: ./back
+      dockerfile: image-processing-service/Dockerfile
+    ports:
+      - "4002:4002"
+    environment:
+      - PORT=4002
+      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://rabbitmq:5672}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://pixpro:pixpro@postgres:5432/pixpro}
+      - R2_ENDPOINT=${R2_ENDPOINT:-}
+      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID:-}
+      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY:-}
+      - R2_BUCKET_NAME=${R2_BUCKET_NAME:-}
+      - R2_PUBLIC_URL=${R2_PUBLIC_URL:-}
+      - JUGGERNAUT_API_URL=${JUGGERNAUT_API_URL:-}
+    depends_on:
+      rabbitmq:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - pixpro-net
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:4002/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      update_config:
+        parallelism: 1
+        delay: 5s
+
+  project-service:
+    build:
+      context: ./back
+      dockerfile: project-service/Dockerfile
+    ports:
+      - "4003:4003"
+    environment:
+      - PORT=4003
+      - DATABASE_URL=${DATABASE_URL:-postgresql://pixpro:pixpro@postgres:5432/pixpro}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://rabbitmq:5672}
+      - JWT_SECRET=${JWT_SECRET:-super-secret-key}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
+    networks:
+      - pixpro-net
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:4003/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      update_config:
+        parallelism: 1
+        delay: 5s
+
+  notification-service:
+    build:
+      context: ./back
+      dockerfile: notification-service/Dockerfile
+    ports:
+      - "4004-4005:4004"
+    environment:
+      - PORT=4004
+      - DATABASE_URL=${DATABASE_URL:-postgresql://pixpro:pixpro@postgres:5432/pixpro}
+      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://rabbitmq:5672}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - JWT_SECRET=${JWT_SECRET:-super-secret-key}
+    depends_on:
+      rabbitmq:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    networks:
+      - pixpro-net
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider --no-check-certificate https://localhost:4004/health || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+      update_config:
+        parallelism: 1
+        delay: 5s
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=pixpro
+      - POSTGRES_PASSWORD=pixpro
+      - POSTGRES_DB=pixpro
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - pixpro-net
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U pixpro -d pixpro" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - pixpro-net
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - pixpro-net
+    healthcheck:
+      test: [ "CMD-SHELL", "rabbitmq-diagnostics -q check_running" ]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - api-gateway
+      - project-service
+    networks:
+      - pixpro-net
+
+volumes:
+  postgres_data:
+
+networks:
+  pixpro-net:
+    driver: bridge

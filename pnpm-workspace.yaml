@@ -1,0 +1,4 @@
+minimumReleaseAgeExclude:
+  - '@rafael_dev/playwright-api-framework@1.0.0 || 1.0.1'
+overrides:
+  playwright-api-framework: link:@rafael_dev/playwright-api-framework

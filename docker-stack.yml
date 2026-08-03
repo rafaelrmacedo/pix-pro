@@ -1,0 +1,173 @@
+services:
+  front:
+    image: pixpro-front:latest
+    ports:
+      - target: 5173
+        published: 5173
+        mode: host
+    environment:
+      - VITE_API_GATEWAY_URL=http://localhost:4000
+    depends_on:
+      - api-gateway
+    networks:
+      - pixpro-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      update_config:
+        parallelism: 1
+        delay: 5s
+
+  api-gateway:
+    image: pixpro-api-gateway:latest
+    ports:
+      - target: 4000
+        published: 4000
+        mode: host
+    environment:
+      - PORT=4000
+      - AUTH_SERVICE_URL=http://auth-service:4001
+      - IMAGE_SERVICE_URL=http://image-processing-service:4002
+      - PROJECT_SERVICE_URL=http://project-service:4003
+      - NOTIFICATION_SERVICE_URL=http://notification-service:4004
+    depends_on:
+      - auth-service
+      - image-processing-service
+      - project-service
+      - notification-service
+    networks:
+      - pixpro-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      update_config:
+        parallelism: 1
+        delay: 5s
+
+  auth-service:
+    image: pixpro-auth-service:latest
+    ports:
+      - target: 4001
+        published: 4001
+        mode: host
+    environment:
+      - PORT=4001
+      - DATABASE_URL=postgresql://pixpro:pixpro@postgres:5432/pixpro
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - pixpro-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      update_config:
+        parallelism: 1
+        delay: 5s
+
+  image-processing-service:
+    image: pixpro-image-processing-service:latest
+    ports:
+      - "4002:4002"
+    environment:
+      - PORT=4002
+      - RABBITMQ_URL=amqp://rabbitmq:5672
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - rabbitmq
+      - redis
+    networks:
+      - pixpro-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      update_config:
+        parallelism: 1
+        delay: 5s
+
+  project-service:
+    image: pixpro-project-service:latest
+    ports:
+      - "4003:4003"
+    environment:
+      - PORT=4003
+      - DATABASE_URL=postgresql://pixpro:pixpro@postgres:5432/pixpro
+      - REDIS_URL=redis://redis:6379
+      - RABBITMQ_URL=amqp://rabbitmq:5672
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+    networks:
+      - pixpro-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      update_config:
+        parallelism: 1
+        delay: 5s
+
+  notification-service:
+    image: pixpro-notification-service:latest
+    ports:
+      - "4004:4004"
+    environment:
+      - PORT=4004
+      - RABBITMQ_URL=amqp://rabbitmq:5672
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - rabbitmq
+      - redis
+    networks:
+      - pixpro-net
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      update_config:
+        parallelism: 1
+        delay: 5s
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=pixpro
+      - POSTGRES_PASSWORD=pixpro
+      - POSTGRES_DB=pixpro
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - pixpro-net
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - pixpro-net
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - pixpro-net
+
+volumes:
+  postgres_data:
+
+networks:
+  pixpro-net:
+    driver: overlay
+    attachable: true
+    driver_opts:
+      com.docker.network.driver.mtu: 1400
