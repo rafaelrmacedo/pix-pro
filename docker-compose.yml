@@ -34,7 +34,7 @@ services:
       - IMAGE_SERVICE_URL=http://image-processing-service:4002
       - PROJECT_SERVICE_URL=http://project-service:4003
       - NOTIFICATION_SERVICE_URL=http://notification-service:4004
-      - JWT_SECRET=${JWT_SECRET}
+      - JWT_SECRET=${JWT_SECRET:-super-secret-key}
     depends_on:
       - auth-service
       - image-processing-service
@@ -43,7 +43,7 @@ services:
     networks:
       - pixpro-net
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:4000/health || exit 1"]
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:4000/health || exit 1" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -69,7 +69,7 @@ services:
       - DB_PASSWORD=pixpro
       - DB_NAME=pixpro
       - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=${JWT_SECRET}
+      - JWT_SECRET=${JWT_SECRET:-super-secret-key}
     depends_on:
       postgres:
         condition: service_healthy
@@ -78,7 +78,7 @@ services:
     networks:
       - pixpro-net
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:4001/health || exit 1"]
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:4001/health || exit 1" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -98,15 +98,15 @@ services:
       - "4002:4002"
     environment:
       - PORT=4002
-      - RABBITMQ_URL=${RABBITMQ_URL}
-      - REDIS_URL=${REDIS_URL}
-      - DATABASE_URL=${DATABASE_URL}
-      - R2_ENDPOINT=${R2_ENDPOINT}
-      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID}
-      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}
-      - R2_BUCKET_NAME=${R2_BUCKET_NAME}
-      - R2_PUBLIC_URL=${R2_PUBLIC_URL}
-      - JUGGERNAUT_API_URL=${JUGGERNAUT_API_URL}
+      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://rabbitmq:5672}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://pixpro:pixpro@postgres:5432/pixpro}
+      - R2_ENDPOINT=${R2_ENDPOINT:-}
+      - R2_ACCESS_KEY_ID=${R2_ACCESS_KEY_ID:-}
+      - R2_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY:-}
+      - R2_BUCKET_NAME=${R2_BUCKET_NAME:-}
+      - R2_PUBLIC_URL=${R2_PUBLIC_URL:-}
+      - JUGGERNAUT_API_URL=${JUGGERNAUT_API_URL:-}
     depends_on:
       rabbitmq:
         condition: service_started
@@ -117,7 +117,7 @@ services:
     networks:
       - pixpro-net
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:4002/health || exit 1"]
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:4002/health || exit 1" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -137,10 +137,10 @@ services:
       - "4003:4003"
     environment:
       - PORT=4003
-      - DATABASE_URL=${DATABASE_URL}
-      - REDIS_URL=${REDIS_URL}
-      - RABBITMQ_URL=${RABBITMQ_URL}
-      - JWT_SECRET=${JWT_SECRET}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://pixpro:pixpro@postgres:5432/pixpro}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://rabbitmq:5672}
+      - JWT_SECRET=${JWT_SECRET:-super-secret-key}
     depends_on:
       postgres:
         condition: service_healthy
@@ -151,7 +151,7 @@ services:
     networks:
       - pixpro-net
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:4003/health || exit 1"]
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:4003/health || exit 1" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -171,10 +171,10 @@ services:
       - "4004-4005:4004"
     environment:
       - PORT=4004
-      - DATABASE_URL=${DATABASE_URL}
-      - RABBITMQ_URL=${RABBITMQ_URL}
-      - REDIS_URL=${REDIS_URL}
-      - JWT_SECRET=${JWT_SECRET}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://pixpro:pixpro@postgres:5432/pixpro}
+      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://rabbitmq:5672}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - JWT_SECRET=${JWT_SECRET:-super-secret-key}
     depends_on:
       rabbitmq:
         condition: service_started
@@ -183,7 +183,7 @@ services:
     networks:
       - pixpro-net
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider --no-check-certificate https://localhost:4004/health || exit 1"]
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider --no-check-certificate https://localhost:4004/health || exit 1" ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -208,7 +208,7 @@ services:
     networks:
       - pixpro-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pixpro -d pixpro"]
+      test: [ "CMD-SHELL", "pg_isready -U pixpro -d pixpro" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -220,7 +220,7 @@ services:
     networks:
       - pixpro-net
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -233,7 +233,7 @@ services:
     networks:
       - pixpro-net
     healthcheck:
-      test: ["CMD-SHELL", "rabbitmq-diagnostics -q check_running"]
+      test: [ "CMD-SHELL", "rabbitmq-diagnostics -q check_running" ]
       interval: 10s
       timeout: 10s
       retries: 5
