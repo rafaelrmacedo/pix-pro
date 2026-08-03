@@ -9,6 +9,7 @@ pnpm-debug.log*
 dist/
 build/
 coverage/
+*.tsbuildinfo
 
 # Logs
 logs/
