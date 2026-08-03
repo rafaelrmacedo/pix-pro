@@ -141,9 +141,3 @@ docker stack deploy -c docker-stack.yml pixpro
 cd back
 npm test
 ```
-
----
-
-## 🗺️ Roadmap
-
-Initial roadmap is documented in `docs/roadmap-inicial.md`.
